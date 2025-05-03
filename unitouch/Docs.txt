@@ -1,0 +1,11 @@
+DATAGET _:
+    - WAITER.txt: get list of waiters
+        <id> <name> <code>\n
+    - REMARKS.txt: List of all items that are remarks
+        <rang> <id> <name>\n
+    - TYPES.txt: all catagories in hand held
+        <id> <name>\n
+    - ART.txt: all items, if items are no remark
+        <id> <name> <TYPES:id> <price> F 0 <rang> ...\n
+    
+        
