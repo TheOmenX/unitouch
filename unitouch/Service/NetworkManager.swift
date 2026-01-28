@@ -8,44 +8,106 @@
 import Foundation
 import Network
 
-class NetworkManager {
-    private var connection: NWConnection;
-    var recvQ: [String];
-    var buffer = Data();
-    let queue = DispatchQueue(label: "thread-save-recvQ")
+
+
+@Observable class NetworkManager {
+    @MainActor var connectionState: ConnectionState = .ready
+    var connection: NWConnection;
+    var retries = 0;
+    private var buffer = Data();
+    private var sharedStream: AsyncStream<String>?
+    private var messageStream: AsyncStream<String>.Continuation?
+
     
     init(){
-        connection = NWConnection(host: "192.168.101.66", port: 1026, using: .tcp)
-        recvQ = []
+        self.connection = NetworkManager.createConnection()
+        self.setupConnection()
+        self.initializeSharedStream()
+    }
+
+    private func initializeSharedStream() {
+        self.sharedStream = AsyncStream<String> { continuation in
+            self.messageStream = continuation
+        }
+    }
+    
+    static func createConnection() -> NWConnection {
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.enableKeepalive = true
+        tcpOptions.keepaliveIdle = 10
+        tcpOptions.keepaliveCount = 2
+        tcpOptions.keepaliveInterval = 2
+        tcpOptions.connectionTimeout = 5
+
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        parameters.prohibitConstrainedPaths = false
+        parameters.prohibitExpensivePaths = false
         
-        connection.stateUpdateHandler = { state in
+        return NWConnection(host: "unitouch.tijngiesberts.nl", port: 80, using: parameters)
+        //return NWConnection(host: "192.168.101.66", port: 1026, using: parameters)
+    }
+        
+    func setupConnection() {
+        connection.stateUpdateHandler  = { [weak self] state in
+            guard let self = self else { return }
+
             switch state {
             case .ready:
-                print("Connected to server")
+                print("Connected to server!")
+                retries = 0;
                 self.receiveMessage()
+                Task { @MainActor in
+                    //try await Task.sleep(nanoseconds: UInt64(2 * 1_000_000_000))
+                    await self.setup(reconnect: (self.connectionState == .reconnecting))
+                }
+            case .waiting(let error):
+                print("Connection waiting (likely temporary issue): \(error)")
+                self.reconnect()
             case .failed(let error):
                 print("Connection failed: \(error)")
+                self.reconnect()
+            case .cancelled:
+                print("Connection cancelled")
             default:
-                print("Default case: \(state)")
-                break
+                print("Other state: \(state)")
             }
         }
         
         connection.start(queue: .global())
     }
     
+    func reconnect() {
+        self.connection.cancel() // Clean up the old connection
+        
+        if self.retries > 5 {
+            Task { @MainActor in self.connectionState = .lost }
+            return
+        }
+        Task { @MainActor in self.connectionState = .reconnecting }
+
+        
+        let delay = retries == 0 ? 0.0 : 5.0
+        self.retries += 1;
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            print("Reconnecting...")
+            self.connection = NetworkManager.createConnection()
+            self.setupConnection()
+        }
+    }
+    
+    
     func sendMessage(message: String, suffix: String = "\n") {
-        let data = (message+suffix).data(using: .isoLatin1) ?? Data()
+        let data = (message+suffix).data(using: .windowsCP1252) ?? Data()
         self.connection.send(content: data, completion: .contentProcessed { error in
             if let error = error {
                 print("Failed to send message: \(error)")
             } else {
-                print("Message sent")
+                print("📤 Message sent: \(message)")
             }
         })
     }
     
-    func onMessageReceived(_ message: String) {
+    func setup(reconnect: Bool) async {
         // Override point for subclasses
     }
 
@@ -59,86 +121,83 @@ class NetworkManager {
                     self.buffer.removeSubrange(0...newlineRange.lowerBound)
 
                     // Only decode after isolating a complete line
-                    if let message = String(data: lineData, encoding: .isoLatin1) {
-                        //print("✅ Received message: \(message)")
-                        self.appendToRecvQ(message)
-                        self.onMessageReceived(message)
+                    if let message = String(data: lineData, encoding: .windowsCP1252) {
+                        self.messageStream?.yield(message)
+                        print("✅ Received message: \(message)")
                     } else {
-                        print("❌ Invalid UTF-8 line (likely split multibyte character)")
+                        print("❌ Invalid line (likely split multibyte character)")
                         print("Raw bytes: \(lineData.map { String(format: "%02x", $0) }.joined(separator: " "))")
                         // Keep buffer intact — we don’t throw away the rest
                     }
                 }
             }
             
-//            if let data = data, !data.isEmpty {
-//                self.buffer.append(data)
-//                
-//                while true {
-//                    // Attempt to convert as much of the buffer as possible into a valid UTF-8 string
-//                    let fullString = String(decoding: self.buffer, as: UTF8.self)
-//                    
-//                    // Look for newline-delimited messages
-//                    guard let newlineRange = fullString.range(of: "\n") else {
-//                        break // no full line available yet
-//                    }
-//                    
-//                    // Extract full line up to newline (excluding newline)
-//                    let line = String(fullString[..<newlineRange.lowerBound])
-//                    
-//                    // Convert back to bytes to remove the correct range from buffer
-//                    let lineByteCount = line.data(using: .utf8)?.count ?? 0
-//                    let newlineByteCount = "\n".data(using: .utf8)?.count ?? 1
-//                    
-//                    // Remove the used bytes from buffer
-//                    self.buffer.removeFirst(lineByteCount + newlineByteCount)
-//                    
-//                    // Send it into the queue
-//                    self.queue.async{
-//                        self.appendToRecvQ(line)
-//                        self.onMessageReceived(line)
-//                    }
-//                }
-//            }
-            
             if isComplete {
                 print("Connection closed by server")
                 self.connection.cancel()
+                Task { @MainActor in self.connectionState = .lost}
             } else if let error = error {
                 print("Error receiving data: \(error)")
             } else {
-                // Continue receiving
                 self.receiveMessage()
             }
         }
     }
+
+    func receiveFirstMessage(timeout seconds: TimeInterval = 5) async throws -> String? {
+        guard let stream = sharedStream else { throw UnitouchError.streamEnded }
+
+        return try await withThrowingTaskGroup(of: String?.self) { group in
+            // Task to wait for the first message
+            group.addTask {
+                for await message in stream {
+                    return message // Return the first message
+                }
+                throw UnitouchError.streamEnded
+            }
+
+            // Task for the timeout
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                self.reconnect()
+                throw UnitouchError.timeout
+            }
+
+            // Return the first task that finishes
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
     
+    func expectFirstMessage(_ expected: String) async throws {
+        let message = try await receiveFirstMessage()
+        if message != expected {
+            // Reset the stream if an unexpectedMessage occured
+            throw UnitouchError.unexpectedMessage(exp: expected, rec: message ?? "")
+        }
+    }
     
-    func appendToRecvQ(_ message: String) {
-        queue.async {
-            self.recvQ.append(message)
+    func getUntilEnd() async throws -> [String] {
+        guard let stream = sharedStream else { throw UnitouchError.streamEnded }
+        
+        var messages: [String] = []
+        
+
+        // Process messages until we see the end marker
+        for await message in stream {
+            if message.contains("//END") {
+                return messages
+            }
+            messages.append(message)
         }
+        
+        throw UnitouchError.missingEndMarker
     }
 
-    func getRecvQCount() -> Int {
-        return queue.sync {
-            self.recvQ.count
-        }
-    }
-
-    func popMessage() -> String? {
-        return queue.sync {
-            guard !self.recvQ.isEmpty else { return nil }
-            return self.recvQ.removeFirst()
-        }
-    }
-
-    func removeAllRecvQ() {
-        queue.async {
-            self.recvQ.removeAll()
-        }
+    // --- Add this cleanup method ---
+    func cleanup() {
+        print("Cleaning up NetworkManager: Cancelling NWConnection")
+        connection.cancel()
     }
 }
-
-
-

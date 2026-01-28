@@ -25,7 +25,7 @@ struct TableView: View {
     var body: some View {
         VStack{
             ZStack {
-                Text("Account - Tafel \(backendManager.activeTable ?? 0).0")
+                Text("Account - Tafel \(backendManager.activeTable ?? 0).\(backendManager.activeSubTable ?? 0)")
             }
             .frame(maxWidth: .infinity)
             .background(Color.gray)
@@ -59,9 +59,9 @@ struct TableView: View {
                     .frame(height: 0) // Prevent it from taking visible space
                     
                     HStack {
-                        Button(action: {
-                            backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)
-                        }) {
+                        Button(action: { Task {
+                            await backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)
+                        } }) {
                             ZStack {
                                 if (!newItems.isEmpty && newItems.last?.plu != 1999){
                                     HStack{
@@ -111,13 +111,17 @@ struct TableView: View {
 
     var categoryBar: some View {
         VStack {
-            List(backendManager.categories, id: \.self) { category in
-                Text(category.name)
-                    .onTapGesture {
-                        selectedId = category.id
-                        print("Selected ID: \(selectedId)")
-                    }
-                    .listRowBackground(selectedId == category.id ? Color.orange : Color.clear)
+            List(backendManager.backendData.categories.sorted {$0.id < $1.id}, id: \.self) { category in
+                HStack{
+                    Text(category.name)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                .contentShape(Rectangle())
+                .listRowBackground(selectedId == category.id ? Color.orange : Color.clear)
+                .onTapGesture {
+                    selectedId = category.id
+                    print("Selected ID: \(selectedId)")
+                }
             }
             .listStyle(.plain)
             
@@ -126,20 +130,21 @@ struct TableView: View {
     
     var itemBar: some View{
         VStack {
-            List(backendManager.items.filter {$0.page == selectedId}, id: \.self) { item in
+            List(backendManager.backendData.items.sorted {$0.unk4 < $1.unk4}.filter {$0.page == selectedId}, id: \.self) { item in
                 Text(item.name)
+                    .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 8)
+                    .listRowInsets(EdgeInsets())
                     .onTapGesture {
                         createNewItem(item: item)
                     }
-                    .padding(.vertical, 8)
-                    .listRowInsets(EdgeInsets())
             }
             .listStyle(.plain)
         }
-        .padding()
     }
     
-    func createNewItem(item: Item){
+    func createNewItem(item: UnitouchProduct){
         if !newItems.isEmpty && newItems.last?.plu == item.plu {
             newItems[newItems.count - 1].quantity += 1
         }else {
@@ -201,6 +206,8 @@ struct TableView: View {
                                     .font(item.comment ? .caption : .body )
                                 
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 clickedItem = item
                             }
@@ -273,31 +280,36 @@ struct TableView: View {
                     HStack{
                         SelectionButton(text: "Terug", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                         SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                        {backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)}
+                        { Task {await backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)} }
                         SelectionButton(text: "Functies", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                     }
                 }
             }
         }.alert("Geef bericht in", isPresented: $addTextAlert, actions: {
-                    TextField("Bericht", text: $message)
-                    Button("Ok", action: {
-                        newItems.insert(NewItem(
-                            user: 4, //FIXME: add actual users
-                            plu: 1999,
-                            name: message,
-                            quantity: 1,
-                            rang: 1,
-                            unk1: "F",
-                            price: 0,
-                            comment: true),
-                                        at: textItemIndex+1 )
-                        message = ""
-                    })
-                    Button("Annuleren", role: .cancel, action: {})
-                })
+            TextField("Bericht", text: $message)
+            Button("Ok", action: {
+                newItems.insert(NewItem(
+                    user: 4, //FIXME: add actual users
+                    plu: 1999,
+                    name: message,
+                    quantity: 1,
+                    rang: 1,
+                    unk1: "F",
+                    price: 0,
+                    comment: true),
+                                at: textItemIndex+1 )
+                message = ""
+            })
+            Button("Annuleren", role: .cancel, action: {})
+        })
     }
 }
 
+enum ConnectionState: String, Equatable, Codable {
+    case ready
+    case reconnecting
+    case lost
+}
 
 #Preview {
     TableView()
