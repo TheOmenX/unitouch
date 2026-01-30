@@ -244,6 +244,28 @@ struct SubTableInfo: Hashable, Identifiable {
 
 struct TableInfo: Equatable {
     var rawTable: String
+    
+    init(rawTable: String) {
+        self.rawTable = rawTable
+    }
+    
+    init?(flatTable: String) {
+        guard flatTable.count >= 2 else { return nil }
+
+        let tableRawSubstring = flatTable.dropLast()           // Substring
+        let subTableChar = flatTable.last!                     // Character
+
+        guard
+            let tableNum = Int(String(tableRawSubstring)),
+            let subTableNum = Int(String(subTableChar))
+        else {
+            return nil
+        }
+
+        self.rawTable = "\(tableNum).\(subTableNum)"
+    }
+    
+    
 
     var table: Int {
         if rawTable.contains(".") {

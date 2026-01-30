@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import SwiftData
+import UIKit
 
 // --- APP STATE ENUM ---
 enum AppState: Equatable {
@@ -18,6 +19,7 @@ enum AppState: Equatable {
     case splitSelection(table: TableInfo, nextState: SplitActions)
     case main                            // Screen 3: Main Input
     case order                                   // Screen 4: The "Move or Pay" logic
+    case payment(balance: Double, bill: String)
 }
 
 enum SplitActions: Equatable {
@@ -31,6 +33,7 @@ enum SplitActions: Equatable {
 class SessionManager: ObservableObject {
     // State
     @Published var state: AppState = .disconnected
+    @Published var preservedState: AppState? = nil
     @Published var activeError: UnitouchError? = nil
     
     // Global Data
@@ -58,21 +61,36 @@ class SessionManager: ObservableObject {
     private func handleConnectionChange(_ status: ConnectionStatus) {
         switch status {
         case .connected:
-            // If we have a user and pin, try to auto-login (silent restore)
-            if let user = currentUser {
-                print("🔄 TCP Connected: Attempting session restore for \(user.name)...")
-                self.setUsers(user: user)
-            } else {
-                // Otherwise, just fetch the user list for a fresh start
+            self.state = .main
+            if self.currentUser == nil {
                 print("🔄 TCP Connected")
+                self.resetState()
                 self.state = .userSelection
+            } else if let currentTable = self.currentTable, let preservedState = self.preservedState {
+                switch preservedState {
+                case .order:
+                    self.enterTable(table: currentTable)
+                case .payment:
+                    self.startPayment(table: currentTable)
+                default:
+                    self.state = .main
+                }
             }
             
+            self.preservedState = nil
+            
         case .disconnected, .failed:
+            //print("🔴 TCP Disconnected - current state \(self.state) -- preserved state \(self.preservedState)")
+            if self.preservedState == nil { self.preservedState = self.state }
             self.state = .disconnected
             
         case .connecting:
             self.state = .loading("Connecting...")
+            // If we have a user and pin, try to auto-login (silent restore)
+            if let user = currentUser {
+                print("🔄 TCP Connected: Attempting session restore for \(user.name)...")
+                self.setUsers(user: user, setState: false)
+            }
         }
     }
     
@@ -96,7 +114,7 @@ class SessionManager: ObservableObject {
         }
     }
     
-    //MARK: Data Retrieval
+    // MARK: Data Retrieval
     func getData(modelContext: ModelContext) async {
         do {
             // MARK: GET ALL USERS
@@ -196,15 +214,14 @@ class SessionManager: ObservableObject {
     }
     
     // SETUSR
-    func setUsers(user: UnitouchUser){
+    func setUsers(user: UnitouchUser, setState: Bool = true){
         TCPClient.shared.sendCommand("SETUSR \(user.id) 5") { response in
             switch response {
             case .success(let code, let message):
-                print("Success! Code: \(code), message: \(message)")
-                self.state = .main
+                if setState { self.state = .main }
                 self.currentUser = user
             case .content(_):
-                self.activeError = .unknown(err: "Invalid response to command SETUSR")
+                break
             case .error(let error):
                 self.activeError = .unknown(err: error.localizedDescription)
             }
@@ -223,7 +240,25 @@ class SessionManager: ObservableObject {
         self.currentSubTables = []
     }
     
-    //MARK: Functions for checking if tables are split
+    func closeTable(){
+        TCPClient.shared.sendCommand("ACCCLOSE") { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 200 {
+                    self.state = .main
+                    self.currentTable = nil
+                }else {
+                    self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel: \(code) \(message)")
+                }
+            case .content(_):
+                self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel")
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel: \(error)")
+            }
+        }
+    }
+    
+    // MARK: Functions for checking if tables are split
     func checkSplitTable(table: TableInfo, nextState: SplitActions){
         currentSubTables = []
         TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)", type: .download) { response in
@@ -265,15 +300,16 @@ class SessionManager: ObservableObject {
         }
     }
     
-    //MARK: Functions for entring tables
+    
+    // MARK: Functions for entring tables
     func enterTable(table: TableInfo){
         TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableRaw)", type: .download) { response in
             switch response {
             case .success(let code, let message):
+                self.resetState()
                 switch code {
                 case 401:
                     self.activeError = .tableLocked
-                    self.state = .main
                 default:
                     self.activeError = .unknown(err: "Onverwachte response bij openen tafel: \(code) \(message)")
                 }
@@ -287,21 +323,19 @@ class SessionManager: ObservableObject {
                 self.currentTable = table
                 self.state = .order
             case .error(let error):
+                self.resetState()
                 print("Error: \(error)")
             }
         }
     }
     
-    func closeTable(newItems: [NewItem], deletedItems: [NewItem]){
-        
+    func finishTable(newItems: [NewItem], deletedItems: [NewItem]){
         // Close table if no changes were made
         if newItems.isEmpty && deletedItems.isEmpty {
             TCPClient.shared.sendCommand("ACCCLOSE") { response in
                 switch response {
                 case .success(_, _):
-                    self.state = .main
-                    self.currentTable = nil
-                    self.currentTableItems = []
+                    self.resetState()
                 case .content(data: _):
                     self.activeError = .unknown(err: "Kon tafel niet sluiten")
                 case .error(let error):
@@ -341,7 +375,7 @@ class SessionManager: ObservableObject {
     }
     
     
-    //MARK: Functions for moving tables
+    // MARK: Functions for moving tables
     func startMoveTable(newTable: TableInfo) {
         TCPClient.shared.sendCommand("ACCGET 1 \(newTable.formatTableRaw)") { response in
             switch response {
@@ -388,21 +422,159 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func stopMovingTable(){
-        TCPClient.shared.sendCommand("ACCCLOSE") { response in
+    
+    // MARK: Functions for paying tables
+    func startPayment(table: TableInfo){
+        TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
             switch response {
             case .success(let code, let message):
                 if code == 200 {
-                    self.state = .main
-                    self.currentTable = nil
-                }else {
-                    self.activeError = .unknown(err: "Onverwachte response bij annuleren: \(code) \(message)")
+                    guard
+                        let balance = Double(message.trimmingCharacters(in: .whitespacesAndNewlines))
+                    else {
+                        self.activeError = .unknown(err: "Kon bedrag niet ophalen van de server") // MAKE ERROR
+                        return
+                    }
+                    TCPClient.shared.sendCommand("GETBILL", type: .download) { response in
+                        switch response {
+                        case .content(let data):
+                            self.state = .payment(balance: Double(balance), bill: data)
+                            self.currentTable = table
+                        case .error(let error):
+                            self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(error)")
+                        case .success:
+                            self.state = .payment(balance: Double(balance), bill: "")
+                            self.currentTable = table
+                        }
+                    }
+                } else{
+                    self.resetState()
+                    if(code == 401) {
+                        self.activeError = .tableLocked
+                    } else if (code == 406){
+                        self.activeError = .tableEmpty
+                    } else {
+                        self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(code) \(message)")
+                    }
                 }
-            case .content(_):
-                self.activeError = .unknown(err: "Onverwachte response bij annuleren")
+            case .content(let data):
+                print(data)
+                break
             case .error(let error):
-                self.activeError = .unknown(err: "Onverwachte response bij annuleren: \(error)")
+                self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(error)")
             }
+        }
+    }
+    
+    func finishPayment(methodId: Int, methodName: String){
+        guard
+            let currentTable = self.currentTable,
+            let currentUser = self.currentUser
+        else {
+            self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
+            return
+        }
+        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(currentTable.formatTableRaw)",
+                                           payload: "\(methodId)\t\(methodName)\t\(currentUser.id)\t1\t1\t\(currentUser.name)\t\t0\tRepBillSmall\t0") { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 200 {
+                    self.resetState()
+                } else {
+                    self.activeError = .unknown(err: "Onverwachte response bij afronden betaling: \(code) \(message)")
+                }
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij afronden betaling: \(error)")
+            case .content(_):
+                break
+            }
+        }
+    }
+    
+    func vivaPayment(amount: Double, tipAmount: Double){
+        guard
+            let currentTable = self.currentTable,
+            let currentUser = self.currentUser
+        else { return }
+        let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableRaw)"
+        guard
+            let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))&tipAmount=\(Int(tipAmount*100))&clientTransactionId=\(clientTransactionId)")
+        else {
+            self.activeError = .invalidVivaWalletURL
+            return
+        }
+        
+
+        
+        UIApplication.shared.open(url, options: [:]) { success in
+            if !success {
+                self.activeError = .unknown(err: "Kon Viva Wallet niet openen")
+            }
+        }
+        
+    }
+    
+    func finishVivaPayment(table: TableInfo, amount: Double, tipAmount: Double, userId: Int, userName: String){
+        /// The application went to sleep and the connection was closed, meaning we have to check wether the table is still available
+
+        print(self.currentTable)
+        print(self.currentUser)
+        
+        return;
+        if self.currentTable == nil {
+            TCPClient.shared.sendCommand("SETUSR \(userId) 5") { response in
+                switch response {
+                case .success(let code, let message):
+                    if code == 200 {
+                        TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
+                            switch response {
+                            case .success(let code, let message):
+                                guard
+                                    let balance = Double(message.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                    code == 200
+                                else {
+                                    self.activeError = .vivaPaymentProcessingError(message: message)
+                                    return
+                                }
+                                if balance != amount {
+                                    self.activeError = .vivaBalanceMismatch(expected: balance, received: amount)
+                                } else {
+                                    TCPClient.shared.sendUploadCommand("ACCPAY 1 \(table.formatTableRaw)",
+                                                                       payload: "97\tInterpay Plus\t\(userId)\t1\t1\t\(userName)\t\t0\tRepBillSmall\t0") { response in
+                                        switch response {
+                                        case .success(let code, let message):
+                                            if code == 200 {
+                                                self.resetState()
+                                            } else {
+                                                self.activeError = .vivaPaymentProcessingError(message: message)
+                                            }
+                                        case .error(let error):
+                                            self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
+                                        case .content(_):
+                                            break
+                                        }
+                                    }
+                                    
+                                }
+                            case .content(_):
+                                break
+                            case .error(let error):
+                                self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
+                            }
+                        }
+                    } else {
+                        self.activeError = .vivaPaymentProcessingError(message: message)
+                    }
+                case .content(_):
+                    break
+                case .error(let error):
+                    self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
+                }
+            }
+            
+        } else {
+            self.finishPayment(methodId: 97, methodName: "Interpay Plus")
+            self.resetState()
         }
     }
 }

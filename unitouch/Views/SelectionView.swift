@@ -77,7 +77,7 @@ struct SelectionView: View {
                         }
                         GridRow {
                             SelectionButton(text: "Betalen", size: itemSize, action1: {
-                                ses
+                                session.startPayment(table: tableNum)
                             })
                             SelectionButton(text: "1", size: itemSize, action1:
                                                 {addTableNum("1")})
@@ -104,7 +104,7 @@ struct SelectionView: View {
                                 if session.currentTable == nil {
                                     session.logout()
                                 }else {
-                                    session.stopMovingTable()
+                                    session.closeTable()
                                     tableNum.rawTable = ""
                                 }
                             })

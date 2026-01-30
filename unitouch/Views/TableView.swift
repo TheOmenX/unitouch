@@ -70,7 +70,7 @@ struct TableView: View {
                     
                     HStack {
                         Button(action: { Task {
-                            session.closeTable(newItems: newItems, deletedItems: deletedItems)
+                            session.finishTable(newItems: newItems, deletedItems: deletedItems)
                         } }) {
                             ZStack {
                                 if (!newItems.isEmpty && newItems.last?.plu != 1999){
@@ -326,7 +326,7 @@ struct TableView: View {
                     Spacer()
                     HStack{
                         SelectionButton(text: "Terug", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                        SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: { Task {session.closeTable(newItems: newItems, deletedItems: deletedItems)} })
+                        SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: { Task {session.finishTable(newItems: newItems, deletedItems: deletedItems)} })
                         SelectionButton(text: "Functies", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                     }
                 }

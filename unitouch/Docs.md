@@ -33,5 +33,14 @@ ACCPUT
 
 
 
+##Viva Payments
+###Referal
+vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=1&tipAmount=1&clientTransactionId=210
+
+###Callback
+unitouch://result?transactionId=03e62a3b-a05d-4941-a194-f12722b7a4ab&transactionEventId=0&bankId=NET_MASTER&appId=A0000000043060&tipAmount=1&transactionDate=2026-01-30T20:12:08.976+0100&amount=2&cardType=Maestro&transactionTypeId=5&verificationMethod=Contactless&accountNumber=************5023&tid=16569864&authorisationCode=021A31&shortOrderCode=6030207782&action=sale&clientTransactionId=210&status=success&message=Transaction%20successful&merchantReference=210&referenceNumber=631366&rrn=603019631366&orderCode=6030207782569864
+
+
+
 
 

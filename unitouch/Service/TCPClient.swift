@@ -213,7 +213,7 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
                 self.queue.async {
                     self.receive()
                     // If requests piled up while connecting, process them now
-                    self.processNextRequest()
+                    // self.processNextRequest()
                 }
                 
             case .failed(let error):
@@ -268,6 +268,13 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
     }
     
     private func handleLine(_ line: String) {
+        if line.contains("100 Welcome") {
+            print("📥 TCP: Received Welcome Message.")
+            self.processNextRequest()
+            return
+        }
+        
+        
         if isReadingContent {
             if line == "//END" {
                 isReadingContent = false

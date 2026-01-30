@@ -27,8 +27,8 @@ struct ContentView: View {
                     LoadingView()
                 case .order:
                     TableView(session: session)
-//                case .payment:
-//                    PaymentView()
+                case .payment(let balance, let bill):
+                    PaymentView(session: session, balance: balance, bill: bill)
                 case .splitSelection(let table, let nextState):
                     SplitTableView(session: session, nextState: nextState, table: table)
                 case .userSelection:
@@ -64,19 +64,29 @@ struct ContentView: View {
                 let result = params.first(where: { key, value in key == "status" })?.value,
                 let message = params.first(where: {key, _ in key == "message"})?.value
             else {
-                //backendManager.paymentStatus = .invalidReturn;
+                //session.activeError = .invalidPaymentURL
                 return
             }
             
             if result == "failure" {
-                print("Transaction failed")
-                Task { @MainActor in
-                    //backendManager.statusError = .unknown(err: message.removingPercentEncoding ?? "")
+                session.activeError = .unknown(err: message.removingPercentEncoding ?? "")
+            }else if result == "success" {
+                guard
+                    let merchantReference = params.first(where: {key, _ in key == "merchantReference"})?.value,
+                    let userIdRaw = merchantReference.components(separatedBy: "-").first,
+                    let userId = Int(userIdRaw),
+                    let userName = merchantReference.components(separatedBy: "-").dropFirst().first,
+                    let tableFlat = merchantReference.components(separatedBy: "-").dropFirst(2).first,
+                    let table = TableInfo(flatTable: tableFlat),
+                    let amountRaw = params.first(where: {key, _ in key == "amount"})?.value,
+                    let tipAmountRaw = params.first(where: {key, _ in key == "tipAmount"})?.value,
+                    let amount = Double(amountRaw),
+                    let tipAmount = Double(tipAmountRaw)
+                else {
+                    return
                 }
-            }else {
-                Task { @MainActor in
-                    //backendManager.vivaPaymentReceived = true
-                }
+
+                session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName)
             }
         }
     }

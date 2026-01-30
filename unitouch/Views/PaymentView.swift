@@ -10,13 +10,22 @@ import UIKit
 import Combine
 
 struct PaymentView: View {
-    @State var backendManager = BackendManager.shared
+    @ObservedObject var session: SessionManager
     
-    @State private var bill: String? = nil
+    var balance: Double
+    var bill: String
+    
+    @State private var fooiInput: String = ""
+    
+    private var fooi: Double {
+        if let fooi = Double(fooiInput) {
+            return fooi/100
+        }else {
+            return 0.00
+        }
+    }
+    
     @State private var hasFocused: Bool = false
-    
-    @State private var input: String = ""
-    @State private var display: String = ""
     
     
     var body: some View {
@@ -30,18 +39,11 @@ struct PaymentView: View {
                 let textHeight = (geometry.size.width - totalSpacing) / CGFloat(5)
                 
                 VStack {
-                    Text(bill ?? "")
+                    Text(bill)
                         .padding(10)
                         .frame(maxWidth: .infinity, maxHeight: geometry.size.height - (itemSize*3) )
                         .background(.white)
                         .foregroundStyle(.black)
-                        .onAppear {
-                            Task {
-                                if bill == nil {
-                                    bill = await backendManager.getBill()
-                                }
-                            }
-                        }
                     Spacer()
                     VStack(alignment: .center){
                         HStack {
@@ -50,7 +52,7 @@ struct PaymentView: View {
                                 .bold()
                                 .frame(maxWidth: itemSize, maxHeight: textHeight)
                             
-                            Text(String(format: "%.2f", (backendManager.balance ?? 0) ) )
+                            Text(String(format: "%.2f", self.balance ) ) // TODO: backendManager.balance
                                 .font(.largeTitle)
                                 .padding()
                                 .frame(width: itemSize * 2)
@@ -68,7 +70,7 @@ struct PaymentView: View {
                             // Display the current input as a currency format
                             
                             ZStack{
-                                Text( (Int(input) ?? 0)  == 0 ? "0.00" : display)
+                                Text(String(format: "%.2f", self.fooi))
                                     .font(.largeTitle)
                                     .padding()
                                     .frame(width: (itemSize*2)-8)
@@ -85,7 +87,7 @@ struct PaymentView: View {
                                             .stroke(Color.black, lineWidth: 3)
                                     )
                                 
-                                TextField("", text: $input)
+                                TextField("", text: $fooiInput)
                                     .keyboardType(.numberPad)
                                     .frame(maxWidth: .infinity)
                                     .frame(maxHeight: textHeight)
@@ -98,15 +100,10 @@ struct PaymentView: View {
                                             hasFocused = true
                                         }
                                     }
-                                    .onChange(of: input) { _, newValue in
-                                        let cleanedInput = input.filter { "0123456789".contains($0) }
-                                        
+                                    .onChange(of: fooiInput) { _, newValue in
+                                        let cleanedInput = fooiInput.filter { "0123456789".contains($0) }
                                         if newValue != cleanedInput {
-                                            self.input = cleanedInput
-                                        }
-                                        
-                                        if hasFocused {
-                                            self.display = String(format: "%.2f", ((Double(cleanedInput) ?? 0) / 100) )
+                                            self.fooiInput = cleanedInput
                                         }
                                     }
                             }
@@ -120,7 +117,7 @@ struct PaymentView: View {
                                 .bold()
                                 .frame(width: itemSize)
                                 .frame(maxHeight: textHeight)
-                            Text( String(format: "%.2f", ( (backendManager.balance ?? 0) + (Double(display) ?? 0)) ) )
+                            Text( String(format: "%.2f", (fooi != 0 ? fooi : balance) ) ) // TODO: backendManager.balance
                                 .font(.largeTitle)
                                 .padding()
                                 .frame(width: itemSize * 2)
@@ -129,7 +126,6 @@ struct PaymentView: View {
                                 .foregroundStyle(.black)
                                 .cornerRadius(8)
                         }
-                        
                     }
                     Spacer()
                     paymentButtons(itemSize: itemSize, buttonHeight: buttonHeight)
@@ -148,17 +144,28 @@ struct PaymentView: View {
     @ViewBuilder
     private func paymentButtons(itemSize: CGFloat, buttonHeight: CGFloat) -> some View {
         HStack{
-            SelectionButton(text: "Terug", width: itemSize, height: buttonHeight)
-                            { Task { await backendManager.cancelPayment()} }
-            SelectionButton(text: "Contant", width: itemSize, height: buttonHeight)
-                                { Task { await backendManager.finishPayment(method: "1\tContant")} }
-            SelectionButton(text: "Viva Wallet", width: itemSize, height: buttonHeight,
-                            action2: {
-                                Task {
-                                    await backendManager.finishPayment(method: "97\tViva Wallet")
-                                }
+            SelectionButton(text: "Terug",
+                            width: itemSize,
+                            height: buttonHeight,
+                            action1:{
+                                session.closeTable()
                             })
-                                {  backendManager.vivaPayment(amount: String(Int( ((backendManager.balance ?? 0) + (Double(display) ?? 0))*100 ) ))}
+            SelectionButton(text: "Contant",
+                            width: itemSize,
+                            height: buttonHeight,
+                            disabled: (fooi != 0 && fooi < balance),
+                            action1: {
+                session.finishPayment(methodId: 1, methodName: "Contant")
+                            })
+            SelectionButton(text: "Viva Wallet",
+                            width: itemSize,
+                            height: buttonHeight,
+                            disabled: (fooi != 0 && fooi < balance),
+                            action2: {
+                                session.finishPayment(methodId: 2, methodName: "Viva Wallet")
+                            }, action1: {
+                                session.vivaPayment(amount: balance, tipAmount: fooi)
+                            })
         }
     }
         

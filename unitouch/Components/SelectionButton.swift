@@ -12,23 +12,26 @@ struct SelectionButton: View {
     var text: String
     var width: CGFloat
     var height: CGFloat
+    var disabled: Bool = false
     var action1: (() -> Void)? = nil
     var action2: (() -> Void)? = nil
     
     // Custom init for size
-    init(text: String, size: CGFloat, action2: (() -> Void)? = nil, action1: (() -> Void)? = nil) {
+    init(text: String, size: CGFloat, disabled: Bool = false, action2: (() -> Void)? = nil, action1: (() -> Void)? = nil) {
         self.text = text
         self.width = size
         self.height = size
+        self.disabled = disabled
         self.action1 = action1
         self.action2 = action2
     }
 
     // Default memberwise initializer remains available
-    init(text: String, width: CGFloat, height: CGFloat, action2: (() -> Void)? = nil, action1: (() -> Void)? = nil) {
+    init(text: String, width: CGFloat, height: CGFloat, disabled: Bool = false, action2: (() -> Void)? = nil, action1: (() -> Void)? = nil) {
         self.text = text
         self.width = width
         self.height = height
+        self.disabled = disabled
         self.action1 = action1
         self.action2 = action2
     }
@@ -41,25 +44,27 @@ struct SelectionButton: View {
                 .font(.title2)
         }
         .frame(width: width, height: height)
-        .background(text == "" ? Color.black : Color.white)
+        .background(text == "" ? Color.black : (self.disabled ? Color.gray : Color.white) )
         .cornerRadius(8)
         .shadow(radius: 2)
         .highPriorityGesture(
             LongPressGesture(minimumDuration: 0.5)
                 .onEnded { _ in
-                    print("Long pressed")
-                    longPressed = true
-                    action2?()
+                    if !disabled {
+                        longPressed = true
+                        action2?()
+                    }
                 }
         )
         .simultaneousGesture(
             TapGesture()
                 .onEnded {
-                    if !longPressed {
-                        print("Short pressed")
-                        action1?()
+                    if !disabled {
+                        if !longPressed {
+                            action1?()
+                        }
+                        longPressed = false
                     }
-                    longPressed = false
                 }
         )
     }
