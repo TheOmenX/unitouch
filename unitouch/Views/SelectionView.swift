@@ -12,7 +12,6 @@ struct SelectionView: View {
     @ObservedObject var session: SessionManager
     
     @State private var tableNum: TableInfo = TableInfo(rawTable: "")
-    @State private var movingTableNum: TableInfo = TableInfo(rawTable: "")
     
     @State private var errorAlert: Bool = false
     @State private var itemsPresentAlert: Bool = false
@@ -36,7 +35,7 @@ struct SelectionView: View {
                         }
                         
                         ZStack {
-                            Text(session.currentTable != nil ? movingTableNum.rawTable : tableNum.rawTable)
+                            Text(tableNum.rawTable)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .foregroundColor(.black)
                                 .font(.title2)
@@ -53,10 +52,9 @@ struct SelectionView: View {
                             SelectionButton(text: "Tafel", size: itemSize, action1:  {
                                 Task {
                                     if(session.currentTable != nil){
-                                        print("Moving table start")
-                                        
+                                        session.checkSplitTable(table: tableNum, nextState: .moveTable)
                                     }else {
-                                        session.enterTable(table: tableNum)
+                                        session.checkSplitTable(table: tableNum, nextState: .openTable)
                                     }
                                     tableNum.rawTable = ""
                                 }
@@ -78,9 +76,10 @@ struct SelectionView: View {
                                                 {addTableNum("6")})
                         }
                         GridRow {
-                            SelectionButton(text: "Betalen", size: itemSize, action1:  //Normally "Betalen"
-                                            { Task { await startPayment() } })
-                            SelectionButton(text: "1", size: itemSize, action1: 
+                            SelectionButton(text: "Betalen", size: itemSize, action1: {
+                                ses
+                            })
+                            SelectionButton(text: "1", size: itemSize, action1:
                                                 {addTableNum("1")})
                             SelectionButton(text: "2", size: itemSize, action1: 
                                                 {addTableNum("2")})
@@ -88,30 +87,27 @@ struct SelectionView: View {
                                                 {addTableNum("3")})
                         }
                         GridRow {
-                            SelectionButton(text: (session.currentTable == nil) ? "Verpl." : "", size: itemSize, action1:
-                                                {
-                                Task {
-                                    //TODO: IMPLEMENT MOVING TABLE
-                                    
-                                }
+                            SelectionButton(text: (session.currentTable == nil) ? "Verpl." : "", size: itemSize, action1: {
+                                session.checkSplitTable(table: tableNum, nextState: .moveTable)
+                                tableNum.rawTable = ""
                             })
                             SelectionButton(text: "0", size: itemSize, action1: 
                                                 {addTableNum("0")})
                             SelectionButton(text: ".", size: itemSize, action1: 
                                                 {addTableNum(".")})
                             SelectionButton(text: "CL", size: itemSize, action1: 
-                                                {tableNum.rawTable = ""; movingTableNum.rawTable = ""})
+                                                {tableNum.rawTable = ""})
                         }
                         Spacer()
                         HStack{
-                            SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                            {
+                            SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {
                                 if session.currentTable == nil {
                                     session.logout()
                                 }else {
-                                    // session.cancelMovingTable()
+                                    session.stopMovingTable()
+                                    tableNum.rawTable = ""
                                 }
-                            }
+                            })
                             SelectionButton(text: "", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                             SelectionButton(text: "", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                         }
@@ -123,31 +119,16 @@ struct SelectionView: View {
     
     
     func addTableNum(_ symbol: String) {
-        let targetTable = session.currentTable != nil ? movingTableNum : tableNum
-        
-        if targetTable.rawTable.contains(".") {
+        if tableNum.rawTable.contains(".") {
             if symbol == "." { return } // Already a dot in the string
-            if targetTable.rawTable.firstIndex(of: ".").map({ $0 != targetTable.rawTable.index(before: targetTable.rawTable.endIndex) }) ?? true { return } // Only one character after dot
-        } else if targetTable.rawTable.count > 3 && symbol != "." { // Only 4 symbols before dot
+            if tableNum.rawTable.firstIndex(of: ".").map({ $0 != tableNum.rawTable.index(before: tableNum.rawTable.endIndex) }) ?? true { return } // Only one character after dot
+        } else if tableNum.rawTable.count > 3 && symbol != "." { // Only 4 symbols before dot
             return
-        } else if symbol == "." && targetTable.rawTable.count == 0 { // Can't start with dot
+        } else if symbol == "." && tableNum.rawTable.count == 0 { // Can't start with dot
             return
         }
         
-        if session.currentTable != nil {
-            movingTableNum.rawTable += symbol
-        } else {
-            tableNum.rawTable += symbol
-        }
-    }
-        
-    func startPayment() async {
-//        await backendManager.startTable(next: .payment, tableInfo: tableNum){
-//            Task {
-//                print("Entering Payment")
-//                _ = await backendManager.startPayment()
-//            }
-//        }
+        tableNum.rawTable += symbol
     }
 }
 

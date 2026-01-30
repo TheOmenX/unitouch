@@ -51,7 +51,7 @@ class SessionManager: ObservableObject {
                 self?.handleConnectionChange(status)
             }
             .store(in: &cancellables)
-                
+        
         TCPClient.shared.start()
     }
     
@@ -97,7 +97,7 @@ class SessionManager: ObservableObject {
     }
     
     //MARK: Data Retrieval
-    func getData(modelContext: ModelContext) async{
+    func getData(modelContext: ModelContext) async {
         do {
             // MARK: GET ALL USERS
             TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
@@ -114,7 +114,7 @@ class SessionManager: ObservableObject {
                     print("Error: \(error)")
                 }
             }
-
+            
             // MARK: GET ALL CATEGORIES
             TCPClient.shared.sendCommand("DATAGET TYPES.txt", type: .download) { response in
                 switch response {
@@ -162,7 +162,7 @@ class SessionManager: ObservableObject {
                     print("Error: \(error)")
                 }
             }
-          
+            
             
             // MARK: GET ALL LOOKUPS
             TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) { response in
@@ -185,7 +185,7 @@ class SessionManager: ObservableObject {
                 }
             }
             
-
+            
             //MARK: Save to database
             modelContext.insert(self.backendData)
             try modelContext.save()
@@ -194,7 +194,6 @@ class SessionManager: ObservableObject {
         }
         
     }
-    
     
     // SETUSR
     func setUsers(user: UnitouchUser){
@@ -224,10 +223,10 @@ class SessionManager: ObservableObject {
         self.currentSubTables = []
     }
     
-    /// Checks whether a table is split
+    //MARK: Functions for checking if tables are split
     func checkSplitTable(table: TableInfo, nextState: SplitActions){
         currentSubTables = []
-        TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)") { response in
+        TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)", type: .download) { response in
             switch response {
             case .success(let code , let message):
                 self.activeError = .unknown(err: "Onverwachte response bij splitsing status van tafel: \(code) \(message)")
@@ -240,7 +239,7 @@ class SessionManager: ObservableObject {
                 
                 /// PLSTSPLIT returns nothing if the table is not split
                 if self.currentSubTables.isEmpty {
-                    self.enterTable(table: table)
+                    self.continueSplitTable(nextTable: table, nextState: nextState)
                 } else {
                     self.state = .splitSelection(table: table, nextState: nextState)
                 }
@@ -250,6 +249,23 @@ class SessionManager: ObservableObject {
         }
     }
     
+    func continueSplitTable(nextTable: TableInfo, nextState: SplitActions){
+        switch nextState {
+        case .openTable:
+            self.enterTable(table: nextTable)
+        case .moveTable:
+            if self.currentTable != nil {
+                self.finishMoveTable(newTable: nextTable)
+            } else {
+                self.startMoveTable(newTable: nextTable)
+            }
+        case .payTable:
+            print()
+            //TODO: session.payTable(table: newTable)
+        }
+    }
+    
+    //MARK: Functions for entring tables
     func enterTable(table: TableInfo){
         TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableRaw)", type: .download) { response in
             switch response {
@@ -312,7 +328,7 @@ class SessionManager: ObservableObject {
         // Upload new items and deleted items to server
         TCPClient.shared.sendUploadCommand("ACCPUT 1 \(table.formatTableRaw)", payload: data) { response in
             switch response {
-            case .success(let code, let message):
+            case .success(_, _):
                 self.state = .main
                 self.currentTable = nil
                 self.currentTableItems = []
@@ -320,6 +336,72 @@ class SessionManager: ObservableObject {
                 self.activeError = .unknown(err: "Kon tafel niet sluiten")
             case .error(let error):
                 self.activeError = .unknown(err: "Kon tafel niet sluiten, error: \(error)")
+            }
+        }
+    }
+    
+    
+    //MARK: Functions for moving tables
+    func startMoveTable(newTable: TableInfo) {
+        TCPClient.shared.sendCommand("ACCGET 1 \(newTable.formatTableRaw)") { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 201 {
+                    self.currentTable = newTable
+                    self.state = .main
+                }else if code == 401 {
+                    self.activeError = .tableLocked
+                }else {
+                    self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(code) \(message)")
+                }
+            case .content(_):
+                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel")
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(error)")
+            }
+        }
+    }
+    
+    func finishMoveTable(newTable: TableInfo) {
+        guard
+            let currentTable = self.currentTable
+        else {
+            self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
+            return
+        }
+        TCPClient.shared.sendCommand("ACCMOVE 1 \(currentTable.formatTableRaw) 1 \(newTable.formatTableRaw)") { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 200 {
+                    self.state = .main
+                    self.currentTable = nil
+                }else if code == 401 {
+                    self.activeError = .tableLocked
+                }else {
+                    self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(code) \(message)")
+                }
+            case .content(_):
+                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel")
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(error)")
+            }
+        }
+    }
+    
+    func stopMovingTable(){
+        TCPClient.shared.sendCommand("ACCCLOSE") { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 200 {
+                    self.state = .main
+                    self.currentTable = nil
+                }else {
+                    self.activeError = .unknown(err: "Onverwachte response bij annuleren: \(code) \(message)")
+                }
+            case .content(_):
+                self.activeError = .unknown(err: "Onverwachte response bij annuleren")
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij annuleren: \(error)")
             }
         }
     }

@@ -230,7 +230,7 @@ struct SubTableInfo: Hashable, Identifiable {
     init?(raw: String){
         let parts = raw.components(separatedBy: "\t")
         guard
-            parts.count == 2
+            parts.count >= 6
         else {
             return nil
         }

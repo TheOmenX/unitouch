@@ -45,19 +45,8 @@ struct SplitTableView: View {
                 var newTable = table
                 newTable.setSubTable(lastInt)
                 
-                switch nextState {
-                case .openTable:
-                    session.enterTable(table: newTable)
-                case .moveTable:
-                    if session.currentTable != nil {
-                        //TODO: session.finishMoveTable(to: newTable)
-                    } else {
-                        //TODO: session.beginMoveTable(to: newTable)
-                    }
-                case .payTable:
-                    print()
-                    //TODO: session.payTable(table: newTable)
-                }
+                session.continueSplitTable(nextTable: newTable, nextState: self.nextState)
+                    
             }
         }
     }
