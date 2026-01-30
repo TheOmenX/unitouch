@@ -81,7 +81,7 @@ class SessionManager: ObservableObject {
         TCPClient.shared.sendCommand("DATAGET TIMESTAMP.txt", type: .download) { response in
             switch response{
             case .content(data: let timestamp):
-                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines) || true {
+                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines){
                     Task{
                         print("Timestamp mismatch, updating data...")
                         print("<\(timestamp.trimmingCharacters(in: .whitespacesAndNewlines))> != <\(oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines))>")
@@ -100,7 +100,7 @@ class SessionManager: ObservableObject {
     }
     
     //MARK: Data Retrieval
-    private func getData(modelContext: ModelContext) async{
+    func getData(modelContext: ModelContext) async{
         do {
             // MARK: GET ALL USERS
             TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
@@ -174,9 +174,26 @@ class SessionManager: ObservableObject {
             TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) { response in
                 switch response{
                 case .success(code: _, message: _):
-                    print("Error: Expeced to recieve data")
-                    
+                    self.activeError = .noDataRecieved
+                case .content(data: let data):
+                    for line in data.split(separator: "\n") {
+                        let parts = line.split(separator: "\t")
+                        
+                        if let lookup = self.backendData.lookups.first(where: { $0.id == Int(parts[0]) }), let child = Int(parts[1]) {
+                            lookup.items.append(child)
+                        } else {
+                            if let newLookup = UnitouchLookup(raw: String(line)) {
+                                self.backendData.lookups.append(newLookup)
+                            }
+                        }
+                    }
+                case .error(let error):
+                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
                 }
+            }
+            
+            for lookup in self.backendData.lookups {
+                print(lookup)
             }
             
 

@@ -38,13 +38,13 @@ class UnitouchProduct {
     var page: Int
     var price: Double
     var unk1: Bool
-    var lookup: Int
+    var lookup: Int = 0
     var rang: Int
     var followPrevious: Bool
     var unk2: Bool
     var unk3: Int
 
-    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, lookup: Int, rang: Int, followPrevious: Bool, unk32: Bool, unk3: Int) {
+    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, lookup: Int, rang: Int, followPrevious: Bool, unk2: Bool, unk3: Int) {
         self.plu = plu
         self.name = name
         self.page = page
@@ -143,6 +143,19 @@ class UnitouchLookup {
         self.id = id
         self.items = items
     }
+    
+    init?(raw: String){
+        let parts = raw.split(separator: "\t")
+        
+        guard
+            parts.count >= 2,
+            let id = Int(parts[0]),
+            let child = Int(parts[1])
+        else { return nil }
+        
+        self.id = id
+        self.items = [child]
+    }
 }
 
 struct NewItem: Hashable, Identifiable {
@@ -219,8 +232,7 @@ struct SubTableInfo: Hashable, Identifiable {
     init?(raw: String){
         let parts = raw.components(separatedBy: "\t")
         guard
-            parts.count == 2,
-            let table = Int(parts[0])
+            parts.count == 2
         else {
             return nil
         }
