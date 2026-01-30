@@ -11,18 +11,16 @@ import UIKit
 
 // MARK: - Enums & Models
 
-/// Represents the specific behavior expected for a request
 enum RequestType {
-    case standard   // Expects: Command -> Response (Case 1)
-    case download   // Expects: Command -> 201 -> Content -> //END (Case 2)
-    case upload     // Expects: Command -> 201 -> Client Sends Data -> Response (Case 3)
+    case standard   // Expects: Command -> Response
+    case download   // Expects: Command -> 201 -> Content -> //END
+    case upload     // Expects: Command -> 201 -> Client Sends Data -> Response
 }
 
-/// The result returned to the UI
 enum ServerResponse {
-    case success(code: Int, message: String) // Standard response (e.g. "200 OK")
-    case content(data: String)               // Bulk data response (The text between 201 and //END)
-    case error(Error)                        // Connection or System errors
+    case success(code: Int, message: String)
+    case content(data: String)
+    case error(Error)
 }
 
 enum ConnectionStatus {
@@ -32,18 +30,24 @@ enum ConnectionStatus {
     case failed(Error)
 }
 
+// 1. New struct to hold queued requests
+struct TCPRequest {
+    let command: String
+    let payload: String? // For uploads
+    let type: RequestType
+    let completion: (ServerResponse) -> Void
+}
+
 // MARK: - TCP Client
-class TCPClient {
+class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI compatibility
     
-    // Singleton Instance
     @MainActor static let shared = TCPClient()
     
-    //
     @Published var connectionStatus: ConnectionStatus = .disconnected
     
     // MARK: - Configuration
-    private let host = "unitouch.tijngiesberts.nl" // REPLACE with your server IP
-    private let port: UInt16 = 1026   // REPLACE with your server Port
+    private let host = "unitouch.tijngiesberts.nl"
+    private let port: UInt16 = 1026
     
     // MARK: - Private Properties
     private var connection: NWConnection?
@@ -51,15 +55,17 @@ class TCPClient {
     
     // Buffering & State Machine
     private var buffer = Data()
-    private var isReadingContent = false     // True if we are inside a "201...//END" block
-    private var contentBuffer = ""           // Accumulates multi-line data
+    private var isReadingContent = false
+    private var contentBuffer = ""
     
     // Request State
     private var activeRequestType: RequestType = .standard
     private var currentCompletion: ((ServerResponse) -> Void)?
-    
-    // Temporary storage for Uploads (Case 3)
     private var pendingUploadPayload: String?
+    
+    // 2. Queueing System
+    private var requestQueue: [TCPRequest] = []
+    private var isProcessing = false
     
     // Background Task Support
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -73,15 +79,17 @@ class TCPClient {
     
     // MARK: - Public API
     
-    /// Start the TCP connection and listen for updates
     func start() {
+        // Prevent multiple start calls
+        if connection?.state == .ready || connection?.state == .preparing { return }
+
         print("🔌 TCP: Attempting connection to \(host):\(port)")
+        DispatchQueue.main.async { self.connectionStatus = .connecting }
         isIntentionalDisconnect = false
         
         let nwHost = NWEndpoint.Host(host)
         let nwPort = NWEndpoint.Port(rawValue: port)!
         
-        // Use .tcp (add .tls here if you need SSL)
         connection = NWConnection(host: nwHost, port: nwPort, using: .tcp)
         
         connection?.stateUpdateHandler = { [weak self] state in
@@ -91,35 +99,63 @@ class TCPClient {
         connection?.start(queue: queue)
     }
     
-    /// Stop the connection manually (e.g. user logout)
     func stop() {
         isIntentionalDisconnect = true
         connection?.cancel()
         print("🔌 TCP: Stopped intentionally.")
+        DispatchQueue.main.async { self.connectionStatus = .disconnected }
     }
     
-    /// Case 1 & 2: Send a command and wait for response or data
-    /// - Parameters:
-    ///   - command: The command string (e.g. "GET_TABLE 5")
-    ///   - type: .standard (default) or .download if you expect bulk data
+    // MARK: - Enqueueing Logic
+    
     func sendCommand(_ command: String, type: RequestType = .standard, completion: @escaping (ServerResponse) -> Void) {
         queue.async {
-            self.activeRequestType = type
-            self.currentCompletion = completion
-            self.send(data: self.ensureNewline(command))
+            // Create request object
+            let request = TCPRequest(command: command, payload: nil, type: type, completion: completion)
+            
+            // Add to queue
+            self.requestQueue.append(request)
+            
+            // Try to process
+            self.processNextRequest()
         }
     }
     
-    /// Case 3: Upload flow. Sends command -> Waits for 201 -> Sends Payload -> Waits for 200
     func sendUploadCommand(_ command: String, payload: String, completion: @escaping (ServerResponse) -> Void) {
         queue.async {
-            self.activeRequestType = .upload
-            self.currentCompletion = completion
-            self.pendingUploadPayload = self.ensureNewline(payload) + "//END\n"
-            
-            // Send the initial command to trigger the "201 Ready"
-            self.send(data: self.ensureNewline(command))
+            let request = TCPRequest(command: command, payload: payload, type: .upload, completion: completion)
+            self.requestQueue.append(request)
+            self.processNextRequest()
         }
+    }
+    
+    // 3. The Processor
+    private func processNextRequest() {
+        // If we are already busy, or no requests left, or not connected, stop.
+        guard !isProcessing, !requestQueue.isEmpty else { return }
+        
+        // Check connection state
+        guard connection?.state == .ready else {
+            print("⚠️ TCP: Cannot process request, socket not ready.")
+            return
+        }
+        
+        isProcessing = true
+        let request = requestQueue.removeFirst()
+        
+        // Setup state for this specific request
+        self.activeRequestType = request.type
+        self.currentCompletion = request.completion
+        self.isReadingContent = false // Reset parser state
+        self.contentBuffer = ""
+        
+        // Handle upload specifics
+        if request.type == .upload, let payload = request.payload {
+            self.pendingUploadPayload = self.ensureNewline(payload) + "//END\n"
+        }
+        
+        // Send the command
+        self.send(data: self.ensureNewline(request.command))
     }
     
     // MARK: - Internal Network Logic
@@ -127,17 +163,20 @@ class TCPClient {
     private func send(data: String) {
         guard let content = data.data(using: .utf8) else { return }
         
-        connection?.send(content: content, completion: .contentProcessed({ error in
+        connection?.send(content: content, completion: .contentProcessed({ [weak self] error in
             if let error = error {
                 print("❌ TCP Send Error: \(error)")
-                self.dispatchError(error)
+                self?.dispatchError(error)
+            } else {
+                print("📤 TCP: Sent \(data.trimmingCharacters(in: .newlines))")
             }
         }))
     }
     
     private func receive() {
-        // Read available bytes
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] (data, _, _, error) in
+        guard connection?.state == .ready else { return }
+
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] (data, context, isComplete, error) in
             guard let self = self else { return }
             
             if let data = data, !data.isEmpty {
@@ -146,45 +185,64 @@ class TCPClient {
             }
             
             if let error = error {
-                // If it's just "cancelled", ignore it. Otherwise report.
-                if case NWError.posix(let code) = error, code == .ECANCELED {
-                    return
-                }
+                if case NWError.posix(let code) = error, code == .ECANCELED { return }
                 print("❌ TCP Receive Error: \(error)")
-                self.connection?.cancel() // This will trigger stateUpdateHandler -> failed
-            } else {
-                // Continue reading endlessly
-                self.receive()
+                self.dispatchError(error) // Fail the current request
+                self.connection?.cancel()
+                return
             }
+            
+            if isComplete {
+                print("⚠️ TCP: Server closed connection.")
+                self.connection?.cancel()
+                return
+            }
+            
+            self.receive()
         }
     }
     
     private func handleStateChange(state: NWConnection.State) {
-        switch state {
-        case .ready:
-            print("✅ TCP: Connected")
-            isReconnecting = false
-            receive() // Start the read loop
-            
-        case .failed(let error):
-            print("❌ TCP: Connection failed: \(error)")
-            attemptReconnect()
-            
-        case .cancelled:
-            if !isIntentionalDisconnect {
-                print("⚠️ TCP: Connection cancelled unexpectedly.")
-                attemptReconnect()
+        DispatchQueue.main.async {
+            switch state {
+            case .ready:
+                print("✅ TCP: Connected")
+                self.connectionStatus = .connected
+                self.isReconnecting = false
+                // Start receiving logic now that we are ready
+                self.queue.async {
+                    self.receive()
+                    // If requests piled up while connecting, process them now
+                    self.processNextRequest()
+                }
+                
+            case .failed(let error):
+                print("❌ TCP: Connection failed: \(error)")
+                self.connectionStatus = .failed(error)
+                self.attemptReconnect()
+                
+            case .cancelled:
+                if !self.isIntentionalDisconnect {
+                    self.connectionStatus = .disconnected
+                    self.attemptReconnect()
+                } else {
+                    self.connectionStatus = .disconnected
+                }
+                
+            case .waiting(let error):
+                print("⏳ TCP: Waiting... \(error)")
+                self.connectionStatus = .connecting
+                
+            default:
+                break
             }
-            
-        case .waiting(let error):
-            print("⏳ TCP: Waiting (Network change?): \(error)")
-            
-        default:
-            break
         }
     }
     
     private func attemptReconnect() {
+        // Reset processing flag so queue halts
+        queue.async { self.isProcessing = false }
+        
         guard !isIntentionalDisconnect, !isReconnecting else { return }
         
         isReconnecting = true
@@ -196,10 +254,9 @@ class TCPClient {
         }
     }
     
-    // MARK: - Protocol Parsing (The State Machine)
+    // MARK: - Protocol Parsing
     
     private func processBuffer() {
-        // Extract lines ending with \n
         while let range = buffer.range(of: Data("\n".utf8)) {
             let lineData = buffer.subdata(in: 0..<range.lowerBound)
             buffer.removeSubrange(0..<range.upperBound)
@@ -211,7 +268,6 @@ class TCPClient {
     }
     
     private func handleLine(_ line: String) {
-        // MODE A: Accumulating Content (Case 2)
         if isReadingContent {
             if line == "//END" {
                 isReadingContent = false
@@ -224,75 +280,88 @@ class TCPClient {
             return
         }
         
-        // MODE B: Parsing Commands/Status Codes
         let components = line.split(separator: " ", maxSplits: 1).map(String.init)
         guard let codeString = components.first, let code = Int(codeString) else {
-            print("⚠️ Protocol Error: Unknown format '\(line)'")
+            // Ignore malformed lines if needed, or handle as error
             return
         }
         
         let message = components.count > 1 ? components[1] : ""
         
-        // Handle "201 Ready"
         if code == 201 {
             if activeRequestType == .download {
-                // Case 2: Server is about to send content. Switch modes.
                 isReadingContent = true
                 contentBuffer = ""
             }
             else if activeRequestType == .upload {
-                // Case 3: Server is ready for our payload. Send it automatically.
                 if let payload = pendingUploadPayload {
                     print("📤 TCP: Sending Upload Payload...")
                     send(data: payload)
                     pendingUploadPayload = nil
                 }
             } else {
-                // Standard command returned 201? Treat as success.
                 dispatchSuccess(code: code, message: message)
             }
         } else {
-            // Standard Response (200, 400, 500, etc.)
             dispatchSuccess(code: code, message: message)
         }
     }
     
-    // MARK: - Helpers
+    // MARK: - Dispatch & Queue Management
+    
     private func ensureNewline(_ str: String) -> String {
         return str.hasSuffix("\n") ? str : str + "\n"
     }
     
     private func dispatchSuccess(code: Int, message: String, dataPayload: String? = nil) {
+        // 1. Capture completion to main thread
+        let completionToCall = self.currentCompletion
+        
         DispatchQueue.main.async {
             if let data = dataPayload {
-                self.currentCompletion?(.content(data: data))
+                completionToCall?(.content(data: data))
             } else {
-                self.currentCompletion?(.success(code: code, message: message))
+                completionToCall?(.success(code: code, message: message))
             }
         }
+        
+        // 2. Clear current request and start next
+        finishCurrentRequest()
     }
     
     private func dispatchError(_ error: Error) {
+        let completionToCall = self.currentCompletion
+        
         DispatchQueue.main.async {
-            self.currentCompletion?(.error(error))
+            completionToCall?(.error(error))
         }
+        
+        finishCurrentRequest()
+    }
+    
+    // 4. Mark done and trigger next
+    private func finishCurrentRequest() {
+        self.isProcessing = false
+        self.currentCompletion = nil
+        self.activeRequestType = .standard // reset default
+        
+        // Process next item in queue immediately
+        self.processNextRequest()
     }
 }
 
 // MARK: - Background Task Handling
 
 extension TCPClient {
-    
     private func registerBackgroundHandling() {
         NotificationCenter.default.addObserver(self, selector: #selector(appDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
     }
     
     @objc private func appDidEnterBackground() {
-        print("📱 App Backgrounded. Requesting TCP persistence...")
-        
+        print("📱 App Backgrounded.")
         backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
-            print("⏰ Background time expired. Cutting connection.")
+            print("⏰ Background time expired.")
             self?.stop()
             self?.endBackgroundTask()
         }
@@ -301,8 +370,6 @@ extension TCPClient {
     @objc private func appDidBecomeActive() {
         print("📱 App Foregrounded.")
         endBackgroundTask()
-        
-        // If connection dropped, restart
         if connection?.state != .ready && connection?.state != .preparing {
             start()
         }
@@ -315,4 +382,3 @@ extension TCPClient {
         }
     }
 }
-
