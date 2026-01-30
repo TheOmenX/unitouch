@@ -57,6 +57,8 @@ struct ContentView: View {
                 for data in backendData.dropFirst() {
                     modelContext.delete(data)
                 }
+            } else {
+                await session.getData(modelContext: modelContext)
             }
         }
         .onOpenURL {url in

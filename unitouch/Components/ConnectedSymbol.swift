@@ -9,7 +9,6 @@ import SwiftUI
 
 struct ConnectedSymbol: View {
     @State private var wifiStrength: Double = 0.25
-    @Bindable var backendManager = BackendManager.shared
     @State private var timer: Timer? = nil
     @State private var wifiColor = Color.orange
 
@@ -20,37 +19,44 @@ struct ConnectedSymbol: View {
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(wifiColor, .white)
                 .padding()
-                .symbolEffect(.bounce, value: backendManager.connectionState)
+                .symbolEffect(.bounce)
                 .onAppear { startTimer(); self.setInfo(); }
                 .onDisappear { stopTimer() }
-                .onChange(of: backendManager.connectionState) { self.setInfo() }
+                .onReceive(TCPClient.shared.$connectionStatus) { _ in
+                    setInfo()
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         
         ZStack{
-            if (backendManager.connectionState != .reconnecting) {
+            switch TCPClient.shared.connectionStatus {
+            case .connecting:
+                EmptyView()
+            default:
                 Button("Reconnect") {
-                    backendManager.retries = 0
-                    backendManager.reconnect()
+                    //backendManager.retries = 0
+                    //backendManager.reconnect()
                 }
                 .padding()
                 .background(Color.blue)
-                .background(Color.white)
+                .foregroundColor(.white)
                 .clipShape(Capsule())
             }
-        }.frame(height: 50)
+        }
+        .frame(height: 50)
     }
 
     private func setInfo(){
-        if backendManager.connectionState == .ready {
+        switch TCPClient.shared.connectionStatus {
+        case .connected:
             wifiColor = Color.green
             wifiStrength = 1.0
             stopTimer()
-        } else if backendManager.connectionState == .reconnecting {
+        case .connecting:
             wifiStrength = 0.0
             wifiColor = Color.orange
             startTimer()
-        } else {
+        default:
             wifiStrength = 0.0
             wifiColor = Color.red
             stopTimer()

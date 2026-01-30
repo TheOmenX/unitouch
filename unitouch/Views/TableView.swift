@@ -131,7 +131,12 @@ struct TableView: View {
     
     var itemBar: some View{
         VStack {
-            List(session.backendData.items.sorted {$0.unk4 < $1.unk4}.filter {$0.page == selectedId}, id: \.self) { item in
+            List(
+                session.backendData.items
+                    .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 })
+                    .filter { (it: UnitouchProduct) in it.page == selectedId },
+                id: \.self
+            ) { item in
                 Text(item.name)
                     .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
                     .contentShape(Rectangle())

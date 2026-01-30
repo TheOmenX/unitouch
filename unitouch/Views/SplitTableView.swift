@@ -55,6 +55,7 @@ struct SplitTableView: View {
                         //TODO: session.beginMoveTable(to: newTable)
                     }
                 case .payTable:
+                    print()
                     //TODO: session.payTable(table: newTable)
                 }
             }
