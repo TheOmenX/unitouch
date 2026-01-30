@@ -50,16 +50,7 @@ struct ContentView: View {
 //            ConnectedSymbol()
 //        }
         .task {
-            if backendData.count > 0 {
-                await session.verifyData(modelContext: modelContext, oldBackendData: backendData.first ?? BackendData())
-                
-                //Delete all backedData except the first one
-                for data in backendData.dropFirst() {
-                    modelContext.delete(data)
-                }
-            } else {
-                await session.getData(modelContext: modelContext)
-            }
+            await session.verifyData(modelContext: modelContext, backendData: backendData.first ?? BackendData())
         }
         .onOpenURL {url in
             print(url.absoluteString)

@@ -76,20 +76,17 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func verifyData(modelContext: ModelContext, oldBackendData: BackendData) async {
-        self.backendData = oldBackendData
+    func verifyData(modelContext: ModelContext, backendData: BackendData) async {
+        self.backendData = backendData
         TCPClient.shared.sendCommand("DATAGET TIMESTAMP.txt", type: .download) { response in
             switch response{
             case .content(data: let timestamp):
-                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines){
+                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != backendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Task{
                         print("Timestamp mismatch, updating data...")
-                        print("<\(timestamp.trimmingCharacters(in: .whitespacesAndNewlines))> != <\(oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines))>")
-                        await self.getData(modelContext: modelContext)
                         self.backendData.reset(timestamp)
+                        await self.getData(modelContext: modelContext)
                     }
-                }else {
-                    //print(self.backendData.users[0])
                 }
             case .error(let error):
                 print("Error: \(error)")
@@ -108,8 +105,6 @@ class SessionManager: ObservableObject {
                 case .success(code: _, message: _):
                     print("Error: Expeced to recieve data")
                 case .content(data: let data):
-                    print(data)
-                    
                     for line in data.split(separator: "\n") {
                         if let newUser = UnitouchUser(raw:String(line)) {
                             self.backendData.users.append(newUser)
@@ -142,7 +137,6 @@ class SessionManager: ObservableObject {
                 case .success(code: _, message: _):
                     print("Error: Expeced to recieve data")
                 case .content(data: let data):
-                    print(data)
                     var temp_cat: [Int] = []
                     
                     for line in data.split(separator: "\n") {
@@ -178,7 +172,6 @@ class SessionManager: ObservableObject {
                 case .content(data: let data):
                     for line in data.split(separator: "\n") {
                         let parts = line.split(separator: "\t")
-                        
                         if let lookup = self.backendData.lookups.first(where: { $0.id == Int(parts[0]) }), let child = Int(parts[1]) {
                             lookup.items.append(child)
                         } else {
@@ -190,10 +183,6 @@ class SessionManager: ObservableObject {
                 case .error(let error):
                     self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
                 }
-            }
-            
-            for lookup in self.backendData.lookups {
-                print(lookup)
             }
             
 

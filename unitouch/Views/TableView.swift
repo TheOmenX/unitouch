@@ -7,12 +7,21 @@
 
 import SwiftUI
 
+fileprivate struct LookupItems: Identifiable {
+    let id = UUID()
+    let lookupId: Int
+    var items: [UnitouchProduct]
+}
+
+
 struct TableView: View {
     
     @ObservedObject var session: SessionManager
     
     @State private var newItems: [NewItem] = []
     @State private var deletedItems: [NewItem] = []
+    
+    @State private var lookupItems: LookupItems? = nil
     
     @State private var selectedId: Int = 1
     @State private var itemSize: CGFloat = 0
@@ -108,6 +117,29 @@ struct TableView: View {
                 }
             }
         }
+        .sheet(item: $lookupItems) { data in
+            VStack {
+                
+                List(
+                    data.items
+                        .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 }),
+                    id: \.self
+                ) { item in
+                    Text(item.name)
+                        .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                        .contentShape(Rectangle())
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .listRowInsets(EdgeInsets())
+                        .onTapGesture {
+                            createNewItem(item: item)
+                            lookupItems = nil
+                        }
+                }
+                .listStyle(.plain)
+                .padding(.top, 24)
+            }
+        }
     }
 
     var categoryBar: some View {
@@ -164,6 +196,16 @@ struct TableView: View {
                 price: Int(item.price*100),
                 comment: item.followPrevious
             ) )
+        }
+        
+        if item.lookup > 0, let lookupItem = session.backendData.lookups.first(where: {$0.id == item.lookup}) {
+            self.lookupItems = LookupItems(lookupId: item.lookup, items: [])
+            
+            for plu in lookupItem.items.sorted() {
+                if let product = session.backendData.items.first(where: {$0.plu == plu}) {
+                    self.lookupItems?.items.append(product)
+                }
+            }
         }
     }
     

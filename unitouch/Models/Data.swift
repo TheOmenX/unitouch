@@ -17,10 +17,8 @@ class BackendData {
     @Relationship var users: [UnitouchUser] = []
     @Relationship var lookups: [UnitouchLookup] = []
 
-    init(items: [UnitouchProduct] = [], categories: [UnitouchCategory] = []) {
+    init() {
         self.timestamp = UUID().uuidString
-        self.items = items
-        self.categories = categories
     }
     
     func reset(_ timestamp: String) {
