@@ -161,7 +161,7 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
     // MARK: - Internal Network Logic
     
     private func send(data: String) {
-        guard let content = data.data(using: .utf8) else { return }
+        guard let content = data.data(using: .windowsCP1252) else { return }
         
         connection?.send(content: content, completion: .contentProcessed({ [weak self] error in
             if let error = error {
@@ -261,7 +261,7 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
             let lineData = buffer.subdata(in: 0..<range.lowerBound)
             buffer.removeSubrange(0..<range.upperBound)
             
-            if let lineString = String(data: lineData, encoding: .utf8) {
+            if let lineString = String(data: lineData, encoding: .windowsCP1252) {
                 handleLine(lineString.trimmingCharacters(in: .newlines))
             }
         }
@@ -280,7 +280,7 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
             return
         }
         
-        let components = line.split(separator: " ", maxSplits: 1).map(String.init)
+        let components = line.contains("\t") ? line.split(separator: "\t", maxSplits: 1).map(String.init) : line.split(separator: " ", maxSplits: 1).map(String.init)
         guard let codeString = components.first, let code = Int(codeString) else {
             // Ignore malformed lines if needed, or handle as error
             return
