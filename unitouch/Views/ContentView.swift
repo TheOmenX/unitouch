@@ -46,9 +46,13 @@ struct ContentView: View {
                 }
             }
         }
-//        .fullScreenCover(isPresented: .constant(backendManager.connectionState != .ready && backendManager.retries > 1) ) {
-//            ConnectedSymbol()
-//        }
+        .alert(item: $session.activeError) { errorInfo in
+            Alert(
+                title: Text("Er ging iets mis"),
+                message: Text(errorInfo.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .task {
             await session.verifyData(modelContext: modelContext, backendData: backendData.first ?? BackendData())
         }
