@@ -1,0 +1,29 @@
+# --- Xcode User Data (Crucial) ---
+*.xcuserdata
+*.xccheckout
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.pbuser
+Breakpoints_v2.xcbkptlist
+copilot-instructions.md
+
+# --- Build Artifacts (Crucial) ---
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+
+# --- Swift Package Manager ---
+.build/
+Packages/
+Package.resolved
+
+# --- macOS System Files ---
+.DS_Store
+
+
+# --- Local Configuration ---
+NetworkManager.swift
+BackendManager.swift
