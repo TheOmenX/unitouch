@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct TableView: View {
-    var backendManager = BackendManager.shared
+    
+    @ObservedObject var session: SessionManager
     
     @State private var newItems: [NewItem] = []
     @State private var deletedItems: [NewItem] = []
@@ -25,7 +26,7 @@ struct TableView: View {
     var body: some View {
         VStack{
             ZStack {
-                Text("Account - Tafel \(backendManager.activeTable ?? 0).\(backendManager.activeSubTable ?? 0)")
+                Text("Account - Tafel \(session.currentTable?.formatTable ?? "-")")
             }
             .frame(maxWidth: .infinity)
             .background(Color.gray)
@@ -60,7 +61,7 @@ struct TableView: View {
                     
                     HStack {
                         Button(action: { Task {
-                            await backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)
+                            session.closeTable(newItems: newItems, deletedItems: deletedItems)
                         } }) {
                             ZStack {
                                 if (!newItems.isEmpty && newItems.last?.plu != 1999){
@@ -111,7 +112,7 @@ struct TableView: View {
 
     var categoryBar: some View {
         VStack {
-            List(backendManager.backendData.categories.sorted {$0.id < $1.id}, id: \.self) { category in
+            List(session.backendData.categories.sorted {$0.id < $1.id}, id: \.self) { category in
                 HStack{
                     Text(category.name)
                 }
@@ -130,7 +131,7 @@ struct TableView: View {
     
     var itemBar: some View{
         VStack {
-            List(backendManager.backendData.items.sorted {$0.unk4 < $1.unk4}.filter {$0.page == selectedId}, id: \.self) { item in
+            List(session.backendData.items.sorted {$0.unk4 < $1.unk4}.filter {$0.page == selectedId}, id: \.self) { item in
                 Text(item.name)
                     .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
                     .contentShape(Rectangle())
@@ -149,7 +150,7 @@ struct TableView: View {
             newItems[newItems.count - 1].quantity += 1
         }else {
             newItems.append(NewItem(
-                user: 4,
+                user: session.currentUser?.id ?? 1,
                 plu: item.plu,
                 name: item.name,
                 quantity: 1,
@@ -181,7 +182,7 @@ struct TableView: View {
                                 .frame(width: itemSize*6)
                                 .font(.caption)
                         }
-                        ForEach((backendManager.activeItems + newItems), id: \.self) { item in
+                        ForEach((session.currentTableItems + newItems), id: \.self) { item in
                             HStack {
                                 if(newItems.contains(item)) {
                                     Image(systemName: "plus")
@@ -256,7 +257,7 @@ struct TableView: View {
                                         }
                                     }else{
                                         var found = false
-                                        for el in backendManager.activeItems {
+                                        for el in session.currentTableItems {
                                             if (el == item){
                                                 deletedItems.append(el)
                                                 found = !el.comment
@@ -271,16 +272,14 @@ struct TableView: View {
                                     }
                                     clickedItem = nil
                                 }
-                                SelectionButton(text: "Ok", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                                {clickedItem = nil}
+                                SelectionButton(text: "Ok", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil})
                             }
                         }
                     }
                     Spacer()
                     HStack{
                         SelectionButton(text: "Terug", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                        SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                        { Task {await backendManager.leaveTable(newItems: newItems, deletedItems: deletedItems)} }
+                        SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: { Task {session.closeTable(newItems: newItems, deletedItems: deletedItems)} })
                         SelectionButton(text: "Functies", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                     }
                 }
@@ -289,7 +288,7 @@ struct TableView: View {
             TextField("Bericht", text: $message)
             Button("Ok", action: {
                 newItems.insert(NewItem(
-                    user: 4, //FIXME: add actual users
+                    user: session.currentUser?.id ?? 0,
                     plu: 1999,
                     name: message,
                     quantity: 1,
@@ -305,12 +304,5 @@ struct TableView: View {
     }
 }
 
-enum ConnectionState: String, Equatable, Codable {
-    case ready
-    case reconnecting
-    case lost
-}
 
-#Preview {
-    TableView()
-}
+

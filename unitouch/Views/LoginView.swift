@@ -8,7 +8,10 @@
 import SwiftUI
 
 struct LoginView: View {
-    @State var backendManager = BackendManager.shared
+    
+    let users: [UnitouchUser]
+    let onSelect: (UnitouchUser) -> Void
+    let onFail: () -> Void
     
     @State private var selectedUser: UnitouchUser? = nil
     @State private var showAlert: Bool = false
@@ -16,7 +19,7 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            List(backendManager.backendData.users.sorted {$0.id < $1.id}, id: \.self) { user in
+            List(users.sorted {$0.id < $1.id}, id: \.self) { user in
                 HStack{
                     Text(user.name)
                 }
@@ -45,14 +48,12 @@ struct LoginView: View {
                         // Primary action here
                         Task{
                             guard let user = selectedUser else { return }
-                            do {
-                                try await backendManager.login(user: user)
-                                backendManager.appState = .selection
-                            } catch {
-                                print("Invalid password")
+                            if passwordText != user.password {
+                                onFail()
+                            }else {
+                                onSelect(user)
                             }
                         }
-                        
                         withAnimation {
                             showAlert.toggle()
                         }

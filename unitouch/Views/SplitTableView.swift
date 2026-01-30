@@ -7,9 +7,14 @@
 
 
 import SwiftUI
+import Combine
+
 
 struct SplitTableView: View {
-    @State var backendManager = BackendManager.shared
+    @ObservedObject var session: SessionManager
+    var nextState: SplitActions
+    var table: TableInfo
+    
     @State private var showAlert: Bool = false
 
     private let columns: Int = 8
@@ -20,48 +25,37 @@ struct SplitTableView: View {
         return (width - totalSpacing) / CGFloat(columns)
     }
 
-    private func tableRow(table: SubTable, itemWidth: CGFloat) -> some View {
+    private func tableRow(subTable: SubTableInfo, itemWidth: CGFloat) -> some View {
         HStack {
-            Text(formatTableNum(table.table))
+            Text(formatTableNum(subTable.table))
                 .frame(width: itemWidth, alignment: .leading)
-            if table.free {
+            if subTable.free {
                 Text("Free")
             } else {
-                Text(table.balance)
-                Text(table.time)
+                Text(subTable.balance)
+                Text(subTable.time)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture {
             Task{
-                let lastCharAsString = String(table.table.last ?? "0")
+                let lastInt = subTable.table.last.flatMap { Int(String($0)) } ?? 0
+
+                var newTable = table
+                newTable.setSubTable(lastInt)
                 
-                if case let .splitTable(table, forTable) = backendManager.appState {
-                    if forTable != .movingTable {
-                        backendManager.activeTable = table
-                        backendManager.activeSubTable = Int(lastCharAsString) ?? 0
+                switch nextState {
+                case .openTable:
+                    session.enterTable(table: newTable)
+                case .moveTable:
+                    if session.currentTable != nil {
+                        //TODO: session.finishMoveTable(to: newTable)
+                    } else {
+                        //TODO: session.beginMoveTable(to: newTable)
                     }
-                    
-                    
-                    switch forTable {
-                    case .tableOpen:
-                        await backendManager.enterTable()
-                    case .movingTable:
-                        if(backendManager.activeSubTable == nil) {
-                            backendManager.activeTable = table
-                            backendManager.activeSubTable = Int(lastCharAsString) ?? 0
-                            backendManager.appState = .movingTable
-                        }else {
-                            await backendManager.moveTable(newTable: "\(table)\(Int(lastCharAsString) ?? 0)")
-                            backendManager.appState = .selection
-                        }
-                    case .payment:
-                        backendManager.activeSubTable = Int(lastCharAsString) ?? 0
-                        
-                    default:
-                        break
-                    }
+                case .payTable:
+                    //TODO: session.payTable(table: newTable)
                 }
             }
         }
@@ -77,8 +71,8 @@ struct SplitTableView: View {
                     
                 List {
                     // Using id parameter is not needed as SubTable conforms to Identifiable
-                    ForEach(backendManager.splitTables) { table in
-                        tableRow(table: table, itemWidth: itemWidth)
+                    ForEach(session.currentSubTables) { subTable in
+                        tableRow(subTable: subTable, itemWidth: itemWidth)
                     }
                 }
                 .listStyle(.plain)
@@ -89,7 +83,7 @@ struct SplitTableView: View {
                         width: geometry.size.width / 3 - 6,
                         height: geometry.size.width / 4 - 6
                     ) {
-                        backendManager.activeTable = nil
+                        session.resetState()
                     }
                     SelectionButton(
                         text: "",
@@ -122,6 +116,3 @@ struct SplitTableView: View {
     }
 }
 
-#Preview {
-    SplitTableView()
-}

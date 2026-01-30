@@ -9,68 +9,54 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Bindable var backendManager = BackendManager.shared
+    @StateObject var session = SessionManager()
     @Environment(\.scenePhase) var scenePhase
-    
     @Environment(\.modelContext) var modelContext
     @Query var backendData: [BackendData]
     
     var body: some View {
         VStack{
             ZStack{
-                switch(backendManager.appState) {
-                case .setup:
+                switch(session.state) {
+                case .disconnected:
+                    HStack{
+                        Text("Disconnected")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .loading:
                     LoadingView()
-                case .tableOpen:
-                    TableView()
-                case .payment:
-                    PaymentView()
-                case .splitTable:
-                    SplitTableView()
-                case .login:
-                    LoginView()
+                case .order:
+                    TableView(session: session)
+//                case .payment:
+//                    PaymentView()
+                case .splitSelection(let table, let nextState):
+                    SplitTableView(session: session, nextState: nextState, table: table)
+                case .userSelection:
+                    LoginView(
+                        users: session.backendData.users,
+                        onSelect: { user in
+                            session.setUsers(user: user)
+                        }, onFail: {
+                            session.activeError = .invalidPassword
+                        })
+                case .main:
+                    SelectionView(session: session)
                 default:
-                    SelectionView()
+                    LoadingView()
                 }
             }
         }
-        .fullScreenCover(isPresented: .constant(backendManager.connectionState != .ready && backendManager.retries > 1) ) {
-            ConnectedSymbol()
-        }
-        .onAppear {
-            backendManager.setModelContext(modelContext)
+//        .fullScreenCover(isPresented: .constant(backendManager.connectionState != .ready && backendManager.retries > 1) ) {
+//            ConnectedSymbol()
+//        }
+        .task {
             if backendData.count > 0 {
-                backendManager.loadBackendData(backendData.first ?? BackendData())
-                print(backendData.first!.timestamp)
+                await session.verifyData(modelContext: modelContext, oldBackendData: backendData.first ?? BackendData())
                 
                 //Delete all backedData except the first one
                 for data in backendData.dropFirst() {
                     modelContext.delete(data)
                 }
-            }
-        }
-        .alert(item: $backendManager.statusError) { error in
-            switch(error){
-            case .tableNotEmpty(let action):
-                return Alert(
-                    title: Text("Verplaatsen"),
-                    message: Text(error.message),
-                    primaryButton: .default(Text("Annuleren")),
-                    secondaryButton: .default(Text("Doorgaan"), action: {action?()})
-                )
-            default:
-                return Alert(
-                    title: Text(error.id),
-                    message: Text(error.message),
-                    dismissButton: .default(Text("Ok"))
-                )
-            }
-        }
-        .onChange(of: scenePhase) {
-            if scenePhase == .active && backendManager.connectionState == .lost {
-                print("Scene became active, reconnecting...")
-                
-                backendManager.reconnect()
             }
         }
         .onOpenURL {url in
@@ -88,11 +74,11 @@ struct ContentView: View {
             if result == "failure" {
                 print("Transaction failed")
                 Task { @MainActor in
-                    backendManager.statusError = .unknown(err: message.removingPercentEncoding ?? "")
+                    //backendManager.statusError = .unknown(err: message.removingPercentEncoding ?? "")
                 }
             }else {
                 Task { @MainActor in
-                    backendManager.vivaPaymentReceived = true
+                    //backendManager.vivaPaymentReceived = true
                 }
             }
         }

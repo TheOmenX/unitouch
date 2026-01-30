@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import SwiftData
 
 // --- APP STATE ENUM ---
 enum AppState: Equatable {
@@ -14,8 +15,15 @@ enum AppState: Equatable {
     case loading(String)
     case userSelection                      // Screen 1: Pick User
     case pinEntry                             // Screen 2: Enter PIN
+    case splitSelection(table: TableInfo, nextState: SplitActions)
     case main                            // Screen 3: Main Input
-    case order(TableInfo)                                   // Screen 4: The "Move or Pay" logic
+    case order                                   // Screen 4: The "Move or Pay" logic
+}
+
+enum SplitActions: Equatable {
+    case openTable
+    case moveTable
+    case payTable
 }
 
 
@@ -25,9 +33,14 @@ class SessionManager: ObservableObject {
     @Published var state: AppState = .disconnected
     @Published var activeError: UnitouchError? = nil
     
+    // Global Data
+    var backendData: BackendData = BackendData()
+    
     // Persistent Memory
     var currentUser: UnitouchUser?
     var currentTable: TableInfo?
+    var currentTableItems: [NewItem] = []
+    var currentSubTables: [SubTableInfo] = []
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -39,7 +52,7 @@ class SessionManager: ObservableObject {
             }
             .store(in: &cancellables)
                 
-                TCPClient.shared.start()
+        TCPClient.shared.start()
     }
     
     private func handleConnectionChange(_ status: ConnectionStatus) {
@@ -48,11 +61,10 @@ class SessionManager: ObservableObject {
             // If we have a user and pin, try to auto-login (silent restore)
             if let user = currentUser {
                 print("🔄 TCP Connected: Attempting session restore for \(user.name)...")
-                
-                
+                self.setUsers(user: user)
             } else {
                 // Otherwise, just fetch the user list for a fresh start
-                print("🔄 TCP Connected: Fetching users...")
+                print("🔄 TCP Connected")
                 self.state = .userSelection
             }
             
@@ -64,15 +76,129 @@ class SessionManager: ObservableObject {
         }
     }
     
+    func verifyData(modelContext: ModelContext, oldBackendData: BackendData) async {
+        self.backendData = oldBackendData
+        TCPClient.shared.sendCommand("DATAGET TIMESTAMP.txt", type: .download) { response in
+            switch response{
+            case .content(data: let timestamp):
+                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines) || true {
+                    Task{
+                        print("Timestamp mismatch, updating data...")
+                        print("<\(timestamp.trimmingCharacters(in: .whitespacesAndNewlines))> != <\(oldBackendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines))>")
+                        await self.getData(modelContext: modelContext)
+                        self.backendData.reset(timestamp)
+                    }
+                }else {
+                    //print(self.backendData.users[0])
+                }
+            case .error(let error):
+                print("Error: \(error)")
+            case .success:
+                print("Timestamp not recieved")
+            }
+        }
+    }
     
+    //MARK: Data Retrieval
+    private func getData(modelContext: ModelContext) async{
+        do {
+            // MARK: GET ALL USERS
+            TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
+                switch response {
+                case .success(code: _, message: _):
+                    print("Error: Expeced to recieve data")
+                case .content(data: let data):
+                    print(data)
+                    
+                    for line in data.split(separator: "\n") {
+                        if let newUser = UnitouchUser(raw:String(line)) {
+                            self.backendData.users.append(newUser)
+                        }
+                    }
+                case .error(let error):
+                    print("Error: \(error)")
+                }
+            }
+
+            // MARK: GET ALL CATEGORIES
+            TCPClient.shared.sendCommand("DATAGET TYPES.txt", type: .download) { response in
+                switch response {
+                case .success(code: _, message: _):
+                    print("Error: Expeced to recieve data")
+                case .content(data: let data):
+                    for line in data.split(separator: "\n") {
+                        if let newCategory = UnitouchCategory(raw:String(line)) {
+                            self.backendData.categories.append(newCategory)
+                        }
+                    }
+                case .error(let error):
+                    print("Error: \(error)")
+                }
+            }
+            
+            // MARK: GET ALL ITEMS
+            TCPClient.shared.sendCommand("DATAGET ART.txt", type: .download) { response in
+                switch response {
+                case .success(code: _, message: _):
+                    print("Error: Expeced to recieve data")
+                case .content(data: let data):
+                    print(data)
+                    var temp_cat: [Int] = []
+                    
+                    for line in data.split(separator: "\n") {
+                        if let newProduct = UnitouchProduct(raw:String(line)) {
+                            self.backendData.items.append(newProduct)
+                            
+                            if(!temp_cat.contains(newProduct.page)){
+                                temp_cat.append(newProduct.page)
+                            }
+                        }
+                    }
+                    
+                    for (index, value) in (temp_cat.sorted()).enumerated() {
+                        if index == value {continue}
+                        for (index1, _) in self.backendData.items.enumerated() {
+                            if(self.backendData.items[index1].page == value){
+                                self.backendData.items[index1].page = index
+                            }
+                        }
+                    }
+                    
+                case .error(let error):
+                    print("Error: \(error)")
+                }
+            }
+          
+            
+            // MARK: GET ALL LOOKUPS
+            TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) { response in
+                switch response{
+                case .success(code: _, message: _):
+                    print("Error: Expeced to recieve data")
+                    
+                }
+            }
+            
+
+            //MARK: Save to database
+            modelContext.insert(self.backendData)
+            try modelContext.save()
+        } catch {
+            self.activeError = error as? UnitouchError
+        }
+        
+    }
+    
+    
+    // SETUSR
     func setUsers(user: UnitouchUser){
-        TCPClient.shared.sendCommand("SET_USER \(user.id) 5") { response in
+        TCPClient.shared.sendCommand("SETUSR \(user.id) 5") { response in
             switch response {
             case .success(let code, let message):
                 print("Success! Code: \(code), message: \(message)")
                 self.state = .main
                 self.currentUser = user
-            case .content(let data):
+            case .content(_):
                 self.activeError = .unknown(err: "Invalid response to command SETUSR")
             case .error(let error):
                 self.activeError = .unknown(err: error.localizedDescription)
@@ -80,8 +206,115 @@ class SessionManager: ObservableObject {
         }
     }
     
+    func logout(){
+        self.currentUser = nil
+        self.state = .userSelection
+    }
     
+    func resetState(){
+        self.state = .main
+        self.currentTable = nil
+        self.currentTableItems = []
+        self.currentSubTables = []
+    }
     
+    /// Checks whether a table is split
+    func checkSplitTable(table: TableInfo, nextState: SplitActions){
+        currentSubTables = []
+        TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)") { response in
+            switch response {
+            case .success(let code , let message):
+                self.activeError = .unknown(err: "Onverwachte response bij splitsing status van tafel: \(code) \(message)")
+            case .content(let data):
+                for line in data.split(separator: "\n") {
+                    if let info = SubTableInfo(raw: String(line)){
+                        self.currentSubTables.append(info)
+                    }
+                }
+                
+                /// PLSTSPLIT returns nothing if the table is not split
+                if self.currentSubTables.isEmpty {
+                    self.enterTable(table: table)
+                } else {
+                    self.state = .splitSelection(table: table, nextState: nextState)
+                }
+            case .error(_):
+                self.activeError = .unknown(err: "Kon splitsing status van tafel niet controleren")
+            }
+        }
+    }
     
+    func enterTable(table: TableInfo){
+        TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableRaw)", type: .download) { response in
+            switch response {
+            case .success(let code, let message):
+                switch code {
+                case 401:
+                    self.activeError = .tableLocked
+                    self.state = .main
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij openen tafel: \(code) \(message)")
+                }
+            case .content(let data):
+                for line in data.split(separator: "\n") {
+                    if let item = NewItem(raw: String(line)) {
+                        self.currentTableItems.append(item)
+                    }
+                }
+                
+                self.currentTable = table
+                self.state = .order
+            case .error(let error):
+                print("Error: \(error)")
+            }
+        }
+    }
     
+    func closeTable(newItems: [NewItem], deletedItems: [NewItem]){
+        
+        // Close table if no changes were made
+        if newItems.isEmpty && deletedItems.isEmpty {
+            TCPClient.shared.sendCommand("ACCCLOSE") { response in
+                switch response {
+                case .success(_, _):
+                    self.state = .main
+                    self.currentTable = nil
+                    self.currentTableItems = []
+                case .content(data: _):
+                    self.activeError = .unknown(err: "Kon tafel niet sluiten")
+                case .error(let error):
+                    self.activeError = .unknown(err: "Kon tafel niet sluiten, error: \(error)")
+                }
+            }
+            return
+        }
+        
+        guard let table = currentTable else {
+            self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
+            return
+        }
+        
+        // Convert data to String
+        var data = ""
+        for item in newItems {
+            data += "\(item.user)\t\(item.plu)\t\(item.name)\t\(item.quantity)\t\(item.rang)\tF\t\(item.price)\t\(item.comment ? "T" : "F")\t\t0\t0\t0\t0\t0\t0\t0\tF\n"
+        }
+        for item in deletedItems {
+            data += "\(item.user)\t\(item.plu)\t\(item.name)\t\(item.quantity)\t\(item.rang)\tF\t\(item.price)\t\(item.comment ? "T" : "F")\tX\t0\t\(item.listPlace)\t0\t0\t0\t0\t0\tF\n"
+        }
+        
+        // Upload new items and deleted items to server
+        TCPClient.shared.sendUploadCommand("ACCPUT 1 \(table.formatTableRaw)", payload: data) { response in
+            switch response {
+            case .success(let code, let message):
+                self.state = .main
+                self.currentTable = nil
+                self.currentTableItems = []
+            case .content(data: _):
+                self.activeError = .unknown(err: "Kon tafel niet sluiten")
+            case .error(let error):
+                self.activeError = .unknown(err: "Kon tafel niet sluiten, error: \(error)")
+            }
+        }
+    }
 }

@@ -6,9 +6,10 @@
 //
 
 import SwiftUI
+import Combine
 
 struct SelectionView: View {
-    @State var backendManager = BackendManager.shared
+    @ObservedObject var session: SessionManager
     
     @State private var tableNum: TableInfo = TableInfo(rawTable: "")
     @State private var movingTableNum: TableInfo = TableInfo(rawTable: "")
@@ -29,13 +30,13 @@ struct SelectionView: View {
                 
                 VStack(alignment: .trailing) {
                     HStack(alignment: .bottom){
-                        if(backendManager.appState == .movingTable) {
+                        if(session.currentTable != nil) {
                             Text("Verplaats naar")
                                 .font(.caption)
                         }
                         
                         ZStack {
-                            Text(backendManager.appState == .movingTable ? movingTableNum.rawTable : tableNum.rawTable)
+                            Text(session.currentTable != nil ? movingTableNum.rawTable : tableNum.rawTable)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .foregroundColor(.black)
                                 .font(.title2)
@@ -51,19 +52,11 @@ struct SelectionView: View {
                         GridRow {
                             SelectionButton(text: "Tafel", size: itemSize, action1:  {
                                 Task {
-                                    if(backendManager.appState == .movingTable){
+                                    if(session.currentTable != nil){
                                         print("Moving table start")
-                                        await backendManager.startTable(next: .movingTable, tableInfo: movingTableNum) {
-                                            Task {
-                                                await backendManager.moveTable(newTable: movingTableNum.formatTable)
-                                            }
-                                        }
+                                        
                                     }else {
-                                        await backendManager.startTable(next: .tableOpen, tableInfo: tableNum) {
-                                            Task {
-                                                await backendManager.enterTable()
-                                            }
-                                        }
+                                        session.enterTable(table: tableNum)
                                     }
                                     tableNum.rawTable = ""
                                 }
@@ -95,13 +88,10 @@ struct SelectionView: View {
                                                 {addTableNum("3")})
                         }
                         GridRow {
-                            SelectionButton(text: (backendManager.appState == .movingTable) ? "" : "Verpl.", size: itemSize, action1: 
+                            SelectionButton(text: (session.currentTable == nil) ? "Verpl." : "", size: itemSize, action1:
                                                 {
                                 Task {
-                                    await backendManager.startTable(next: .movingTable, tableInfo: tableNum) {
-                                        tableNum.rawTable = ""
-                                        backendManager.appState = .movingTable
-                                    }
+                                    //TODO: IMPLEMENT MOVING TABLE
                                     
                                 }
                             })
@@ -116,11 +106,10 @@ struct SelectionView: View {
                         HStack{
                             SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
                             {
-                                if backendManager.appState == .selection {
-                                    backendManager.activeUser = nil
-                                    backendManager.appState = .login
+                                if session.currentTable == nil {
+                                    session.logout()
                                 }else {
-                                    backendManager.reset()
+                                    // session.cancelMovingTable()
                                 }
                             }
                             SelectionButton(text: "", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
@@ -134,7 +123,7 @@ struct SelectionView: View {
     
     
     func addTableNum(_ symbol: String) {
-        let targetTable = backendManager.appState == .movingTable ? movingTableNum : tableNum
+        let targetTable = session.currentTable != nil ? movingTableNum : tableNum
         
         if targetTable.rawTable.contains(".") {
             if symbol == "." { return } // Already a dot in the string
@@ -145,7 +134,7 @@ struct SelectionView: View {
             return
         }
         
-        if backendManager.appState == .movingTable {
+        if session.currentTable != nil {
             movingTableNum.rawTable += symbol
         } else {
             tableNum.rawTable += symbol
@@ -153,12 +142,12 @@ struct SelectionView: View {
     }
         
     func startPayment() async {
-        await backendManager.startTable(next: .payment, tableInfo: tableNum){
-            Task {
-                print("Entering Payment")
-                _ = await backendManager.startPayment()
-            }
-        }
+//        await backendManager.startTable(next: .payment, tableInfo: tableNum){
+//            Task {
+//                print("Entering Payment")
+//                _ = await backendManager.startPayment()
+//            }
+//        }
     }
 }
 
