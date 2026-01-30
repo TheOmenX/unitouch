@@ -38,23 +38,45 @@ class UnitouchProduct {
     var page: Int
     var price: Double
     var unk1: Bool
-    var unk2: Int
+    var lookup: Int
     var rang: Int
     var followPrevious: Bool
-    var unk3: Bool
-    var unk4: Int
+    var unk2: Bool
+    var unk3: Int
 
-    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, unk2: Int, rang: Int, followPrevious: Bool, unk3: Bool, unk4: Int) {
+    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, lookup: Int, rang: Int, followPrevious: Bool, unk32: Bool, unk3: Int) {
         self.plu = plu
         self.name = name
         self.page = page
         self.price = price
         self.unk1 = unk1
-        self.unk2 = unk2
+        self.lookup = lookup
         self.rang = rang
         self.followPrevious = followPrevious
+        self.unk2 = unk2
         self.unk3 = unk3
-        self.unk4 = unk4
+    }
+    
+    init?(raw: String){
+        let parts = raw.split(separator: "\t")
+        
+        guard
+            parts.count >= 10,
+            let plu = Int(parts[0])
+        else {
+            return nil
+        }
+        
+        self.plu = plu
+        self.name = String(parts[1])
+        self.page = Int(parts[2]) ?? -1
+        self.price = Double(parts[3]) ?? -1.1
+        self.unk1 = (parts[4] == "T")
+        self.lookup = Int(parts[5]) ?? 0
+        self.rang = Int(parts[6]) ?? -1
+        self.followPrevious = (parts[7] == "T")
+        self.unk2 = (parts[8] == "T")
+        self.unk3 = Int(parts[9]) ?? -1
     }
 }
 
@@ -66,6 +88,20 @@ class UnitouchCategory {
     init(id: Int, name: String) {
         self.id = id
         self.name = name
+    }
+    
+    init?(raw: String) {
+        let parts = raw.split(separator: "\t")
+        
+        guard
+            parts.count == 2,
+            let id = Int(parts[0])
+        else {
+            return nil
+        }
+        
+        self.id = id
+        self.name = String(parts[1])
     }
 }
 
@@ -124,20 +160,81 @@ struct NewItem: Hashable, Identifiable {
     var output: String {
         return "\(self.id)"
     }
+    
+    init(
+        id: UUID = UUID(),
+        user: Int,
+        plu: Int,
+        name: String,
+        quantity: Int,
+        rang: Int,
+        unk1: String = "F",
+        price: Int,
+        comment: Bool,
+        listPlace: Int = 0
+    ) {
+        self.id = id
+        self.user = user
+        self.plu = plu
+        self.name = name
+        self.quantity = quantity
+        self.rang = rang
+        self.unk1 = unk1
+        self.price = price
+        self.comment = comment
+        self.listPlace = listPlace
+    }
+    
+    init?(raw: String) {
+        let parts = raw.components(separatedBy: "\t")
+        
+        guard
+            parts.count >= 10,
+            parts[6].contains("."),
+            let user = Int(parts[0]),
+            let plu = Int(parts[1])
+        else {
+            return nil
+        }
+        
+        self.user = user
+        self.plu = plu
+        self.name = parts[2]
+        self.quantity = Int(parts[3]) ?? -1
+        self.rang = Int(parts[4]) ?? -1
+        self.unk1 = "F"
+        self.price = Int(parts[6]) ?? -1 // TODO: Fix
+        self.comment = parts[7]=="T" ? true : false
+        self.listPlace = Int(parts[10]) ?? -1
+    }
 }
 
-struct SubTable: Hashable, Identifiable {
+struct SubTableInfo: Hashable, Identifiable {
     var id = UUID()
     var table: String
     var balance: String
     var time: String
     var free: Bool
+    
+    init?(raw: String){
+        let parts = raw.components(separatedBy: "\t")
+        guard
+            parts.count == 2,
+            let table = Int(parts[0])
+        else {
+            return nil
+        }
+        
+        self.table = parts[0]
+        self.balance = parts[1]
+        self.time = parts[2]
+        self.free = (parts[5] == "Free")
+    }
 }
 
 struct TableInfo: Equatable {
     var rawTable: String
 
-    
     var table: Int {
         if rawTable.contains(".") {
             return Int(rawTable.split(separator: ".")[0]) ?? 0
@@ -157,9 +254,18 @@ struct TableInfo: Equatable {
         return rawTable.split(separator: ".").count > 1
     }
     
-    var formatTable: String {
+    var formatTableRaw: String {
         return String(format: "%d%d", table, subTable)
     }
+    
+    var formatTable: String {
+        return String(format: "%d.%d", table, subTable)
+    }
+    
+    mutating func setSubTable(_ subTable: Int) {
+        self.rawTable = "\(table).\(subTable)"
+    }
+    
 }
 
 
