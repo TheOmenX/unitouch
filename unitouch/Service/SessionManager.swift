@@ -491,12 +491,14 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func vivaPayment(amount: Double, tipAmount: Double){
+    func vivaPayment(amount: Double, total: Double){
         guard
             let currentTable = self.currentTable,
-            let currentUser = self.currentUser
+            let currentUser = self.currentUser,
+            total == 0 || total >= amount
         else { return }
         let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableRaw)"
+        let tipAmount = total - amount
         guard
             let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))&tipAmount=\(Int(tipAmount*100))&clientTransactionId=\(clientTransactionId)")
         else {
@@ -516,54 +518,36 @@ class SessionManager: ObservableObject {
     
     func finishVivaPayment(table: TableInfo, amount: Double, tipAmount: Double, userId: Int, userName: String){
         /// The application went to sleep and the connection was closed, meaning we have to check wether the table is still available
-
-        print(self.currentTable)
-        print(self.currentUser)
-        
-        return;
         if self.currentTable == nil {
-            TCPClient.shared.sendCommand("SETUSR \(userId) 5") { response in
+            TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
                 switch response {
                 case .success(let code, let message):
-                    if code == 200 {
-                        TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
+                    guard
+                        let balance = Double(message.trimmingCharacters(in: .whitespacesAndNewlines)),
+                        code == 200
+                    else {
+                        self.activeError = .vivaPaymentProcessingError(message: message)
+                        return
+                    }
+                    if balance != amount {
+                        self.activeError = .vivaBalanceMismatch(expected: balance, received: amount)
+                    } else {
+                        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(table.formatTableRaw)",
+                                                           payload: "97\tInterpay Plus\t\(userId)\t1\t1\t\(userName)\t\t0\tRepBillSmall\t0") { response in
                             switch response {
                             case .success(let code, let message):
-                                guard
-                                    let balance = Double(message.trimmingCharacters(in: .whitespacesAndNewlines)),
-                                    code == 200
-                                else {
-                                    self.activeError = .vivaPaymentProcessingError(message: message)
-                                    return
-                                }
-                                if balance != amount {
-                                    self.activeError = .vivaBalanceMismatch(expected: balance, received: amount)
+                                if code == 200 {
+                                    self.resetState()
                                 } else {
-                                    TCPClient.shared.sendUploadCommand("ACCPAY 1 \(table.formatTableRaw)",
-                                                                       payload: "97\tInterpay Plus\t\(userId)\t1\t1\t\(userName)\t\t0\tRepBillSmall\t0") { response in
-                                        switch response {
-                                        case .success(let code, let message):
-                                            if code == 200 {
-                                                self.resetState()
-                                            } else {
-                                                self.activeError = .vivaPaymentProcessingError(message: message)
-                                            }
-                                        case .error(let error):
-                                            self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
-                                        case .content(_):
-                                            break
-                                        }
-                                    }
-                                    
+                                    self.activeError = .vivaPaymentProcessingError(message: message)
                                 }
-                            case .content(_):
-                                break
                             case .error(let error):
                                 self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
+                            case .content(_):
+                                break
                             }
                         }
-                    } else {
-                        self.activeError = .vivaPaymentProcessingError(message: message)
+                        
                     }
                 case .content(_):
                     break
