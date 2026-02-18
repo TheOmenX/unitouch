@@ -14,20 +14,25 @@ import UIKit
 enum AppState: Equatable {
     case disconnected
     case loading(String)
-    case userSelection                      // Screen 1: Pick User
-    case pinEntry                             // Screen 2: Enter PIN
-    case splitSelection(table: TableInfo, nextState: SplitActions)
-    case main                            // Screen 3: Main Input
-    case splitTable
-    case order                                   // Screen 4: The "Move or Pay" logic
+    case userSelection                                                  // Screen 1: Pick User
+    case pinEntry                                                       // Screen 2: Enter PIN
+    case splitSelection(table: TableInfo, nextState: SubTableActions)
+    case main                                                           // Screen 3: Main Input
+    case splitTable(nextAction: SplitTableActions)                           // Screen 4: Split Table
+    case order                                                          // Screen 4: The "Move or Pay" logic
     case payment(balance: Double, bill: String)
 }
 
-enum SplitActions: Equatable {
+enum SubTableActions: Equatable {
     case openTable
     case moveTable
     case payTable
     case splitTable
+}
+
+enum SplitTableActions: Equatable {
+    case move
+    case pay
 }
 
 
@@ -261,8 +266,8 @@ class SessionManager: ObservableObject {
     }
     
     
-    // MARK: Functions for checking if tables are split
-    func checkSplitTable(table: TableInfo, nextState: SplitActions){
+    // MARK: Functions for checking if a table consists of sub tables
+    func checkSubTable(table: TableInfo, nextState: SubTableActions){
         currentSubTables = []
         TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)", type: .download) { response in
             switch response {
@@ -277,7 +282,7 @@ class SessionManager: ObservableObject {
                 
                 /// PLSTSPLIT returns nothing if the table is not split
                 if self.currentSubTables.isEmpty {
-                    self.continueSplitTable(nextTable: table, nextState: nextState)
+                    self.continueSubTable(nextTable: table, nextState: nextState)
                 } else {
                     self.state = .splitSelection(table: table, nextState: nextState)
                 }
@@ -287,7 +292,7 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func continueSplitTable(nextTable: TableInfo, nextState: SplitActions){
+    func continueSubTable(nextTable: TableInfo, nextState: SubTableActions){
         switch nextState {
         case .openTable:
             self.enterTable(table: nextTable)
@@ -435,8 +440,23 @@ class SessionManager: ObservableObject {
             self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
             return
         }
-        self.state = .splitTable
+        self.state = .splitTable(nextAction: .move)
     }
+    
+    func continueSplitTable() {
+        guard case let .splitTable(nextAction) = self.state else { return }
+        let next = nextAction
+            
+        if next == .move {
+            self.state = .main
+        } else {
+            let paymentTable = TableInfo(rawTable: "1001.0")
+            finishSplitTable(newTable: paymentTable)
+            
+            startPayment(table: paymentTable)
+        }
+    }
+    
     func finishSplitTable(newTable: TableInfo) {
         guard
             let currentTable = self.currentTable

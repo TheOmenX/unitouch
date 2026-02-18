@@ -12,7 +12,7 @@ import Combine
 
 struct SubTableSelectionView: View {
     @ObservedObject var session: SessionManager
-    var nextState: SplitActions
+    var nextState: SubTableActions
     var table: TableInfo
     
     @State private var showAlert: Bool = false
@@ -45,7 +45,7 @@ struct SubTableSelectionView: View {
                 var newTable = table
                 newTable.setSubTable(lastInt)
                 
-                session.continueSplitTable(nextTable: newTable, nextState: self.nextState)
+                session.continueSubTable(nextTable: newTable, nextState: self.nextState)
                     
             }
         }

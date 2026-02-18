@@ -9,6 +9,10 @@ DATAGET _:
         <id> <name>\n
     - ART.txt: all items, if items are no remark
         <id> <name> <TYPES:id> <price> F 0 <rang> ...\n
+    - TBLCELL.txt
+        <BTNfrmCnt: int> <BTNcllCnt: int> <BTNlabel: string> <BTNx: int> <BTNy: int> <BTNw: int> <BTNh: int> <BTNr: int> <BTNaccNum: int>
+    - TBLCOLORS.txt
+        <buttoncolorsID: int> <BTNStatus: int> <BTNFill: int> <BTNText: int>\n
     
 
 ## ACCSPLIT

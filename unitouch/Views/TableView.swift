@@ -352,9 +352,14 @@ struct TableView: View {
     }
     
     var functionsView: some View {
-        SelectionButton(text: "Split", size: 200, action1: {
-            session.state = .splitTable 
-        })
+        VStack{
+            SelectionButton(text: "Split", size: 200, action1: {
+                session.state = .splitTable(nextAction: .move)
+            })
+            SelectionButton(text: "Split Betalen", size: 200, action1: {
+                session.state = .splitTable(nextAction: .pay)
+            })
+        }
     }
 }
 

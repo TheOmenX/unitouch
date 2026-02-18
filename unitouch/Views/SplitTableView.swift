@@ -73,7 +73,7 @@ struct SplitTableView: View {
                             session.closeTable()
                         })
                         SelectionButton(text: "Bevestigen", width: itemSize*4 + spacing*3, height: itemSize*2, action1: {
-                            session.state = .main
+                            session.continueSplitTable()
                         })
                     }
                 }

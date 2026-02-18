@@ -53,12 +53,12 @@ struct SelectionView: View {
                                 Task {
                                     if(session.currentTable != nil){
                                         if session.currentTableItems.count > 0 {
-                                            session.checkSplitTable(table: tableNum, nextState: .splitTable)
+                                            session.checkSubTable(table: tableNum, nextState: .splitTable)
                                         } else {
-                                            session.checkSplitTable(table: tableNum, nextState: .openTable)
+                                            session.checkSubTable(table: tableNum, nextState: .moveTable)
                                         }
                                     }else {
-                                        session.checkSplitTable(table: tableNum, nextState: .openTable)
+                                        session.checkSubTable(table: tableNum, nextState: .openTable)
                                     }
                                     tableNum.rawTable = ""
                                 }
@@ -80,7 +80,7 @@ struct SelectionView: View {
                                                 {addTableNum("6")})
                         }
                         GridRow {
-                            SelectionButton(text: "Betalen", size: itemSize, action1: {
+                            SelectionButton(text: (session.currentTable == nil) ? "Betalen" :  "", size: itemSize, action1: {
                                 session.startPayment(table: tableNum)
                             })
                             SelectionButton(text: "1", size: itemSize, action1:
@@ -92,7 +92,7 @@ struct SelectionView: View {
                         }
                         GridRow {
                             SelectionButton(text: (session.currentTable == nil) ? "Verpl." : "", size: itemSize, action1: {
-                                session.checkSplitTable(table: tableNum, nextState: .moveTable)
+                                session.checkSubTable(table: tableNum, nextState: .moveTable)
                                 tableNum.rawTable = ""
                             })
                             SelectionButton(text: "0", size: itemSize, action1: 
