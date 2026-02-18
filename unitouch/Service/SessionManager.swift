@@ -18,6 +18,7 @@ enum AppState: Equatable {
     case pinEntry                             // Screen 2: Enter PIN
     case splitSelection(table: TableInfo, nextState: SplitActions)
     case main                            // Screen 3: Main Input
+    case splitTable
     case order                                   // Screen 4: The "Move or Pay" logic
     case payment(balance: Double, bill: String)
 }
@@ -26,6 +27,7 @@ enum SplitActions: Equatable {
     case openTable
     case moveTable
     case payTable
+    case splitTable
 }
 
 
@@ -42,7 +44,7 @@ class SessionManager: ObservableObject {
     // Persistent Memory
     var currentUser: UnitouchUser?
     var currentTable: TableInfo?
-    var currentTableItems: [NewItem] = []
+    @Published var currentTableItems: [NewItem] = []
     var currentSubTables: [SubTableInfo] = []
     
     private var cancellables = Set<AnyCancellable>()
@@ -217,7 +219,7 @@ class SessionManager: ObservableObject {
     func setUsers(user: UnitouchUser, setState: Bool = true){
         TCPClient.shared.sendCommand("SETUSR \(user.id) 5") { response in
             switch response {
-            case .success(let code, let message):
+            case .success(_, _):
                 if setState { self.state = .main }
                 self.currentUser = user
             case .content(_):
@@ -246,7 +248,7 @@ class SessionManager: ObservableObject {
             case .success(let code, let message):
                 if code == 200 {
                     self.state = .main
-                    self.currentTable = nil
+                    self.resetState()
                 }else {
                     self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel: \(code) \(message)")
                 }
@@ -257,6 +259,7 @@ class SessionManager: ObservableObject {
             }
         }
     }
+    
     
     // MARK: Functions for checking if tables are split
     func checkSplitTable(table: TableInfo, nextState: SplitActions){
@@ -294,6 +297,8 @@ class SessionManager: ObservableObject {
             } else {
                 self.startMoveTable(newTable: nextTable)
             }
+        case .splitTable:
+            self.finishSplitTable(newTable: nextTable)
         case .payTable:
             print()
             //TODO: session.payTable(table: newTable)
@@ -352,11 +357,11 @@ class SessionManager: ObservableObject {
         
         // Convert data to String
         var data = ""
-        for item in newItems {
-            data += "\(item.user)\t\(item.plu)\t\(item.name)\t\(item.quantity)\t\(item.rang)\tF\t\(item.price)\t\(item.comment ? "T" : "F")\t\t0\t0\t0\t0\t0\t0\t0\tF\n"
+        for item in newItems  {
+            data += item.outputNew
         }
         for item in deletedItems {
-            data += "\(item.user)\t\(item.plu)\t\(item.name)\t\(item.quantity)\t\(item.rang)\tF\t\(item.price)\t\(item.comment ? "T" : "F")\tX\t0\t\(item.listPlace)\t0\t0\t0\t0\t0\tF\n"
+            data += item.outputDelete
         }
         
         // Upload new items and deleted items to server
@@ -421,6 +426,44 @@ class SessionManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: Functions for splitting tables
+    func startSplitTable() {
+        guard
+            self.currentTable != nil
+        else {
+            self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
+            return
+        }
+        self.state = .splitTable
+    }
+    func finishSplitTable(newTable: TableInfo) {
+        guard
+            let currentTable = self.currentTable
+        else {
+            return
+        }
+        
+        let items = self.currentTableItems.filter { $0.splitMove > 0 }
+        let data = items.map { $0.outputSplitMove }.joined()
+        
+        TCPClient.shared.sendUploadCommand("ACCSPLIT 1 \(currentTable.formatTableRaw) 1 \(newTable.formatTableRaw)", payload: data, completion: { response in
+            switch response {
+            case .success(let code, let message):
+                if code == 200 {
+                    self.resetState()
+                } else {
+                    self.activeError = .unknown(err: "Onverwachte response bij splitsen tafel: \(code) \(message)")
+                }
+            case .content(_):
+                break
+            case .error(let error):
+                self.activeError = .unknown(err: "Onverwachte response bij splitsen tafel: \(error)")
+            }
+        })
+    }
+    
+    
     
     
     // MARK: Functions for paying tables

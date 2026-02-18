@@ -31,6 +31,7 @@ ACCPAY <? 1> table
 ##ACCPUT
 ACCPUT
 
+    
 
 
 ##Viva Payments
@@ -44,3 +45,14 @@ unitouch://result?transactionId=03e62a3b-a05d-4941-a194-f12722b7a4ab&transaction
 
 
 
+
+
+##Error Codes
+
+200 Ok
+201 ready
+
+400 Syntax Error
+401 Account Locked
+402 Destination Account Locked
+426 

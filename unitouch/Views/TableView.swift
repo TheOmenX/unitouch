@@ -42,6 +42,7 @@ struct TableView: View {
             TabView{
                 selectionView
                 overviewView
+                functionsView
             }
             .tabViewStyle(.page)
         }
@@ -60,7 +61,7 @@ struct TableView: View {
                         let spacing: CGFloat = 8
                         let totalSpacing = spacing * CGFloat(columns - 1)
                         let calculatedSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
-
+                        
                         Color.clear
                             .onAppear {
                                 itemSize = calculatedSize
@@ -141,7 +142,7 @@ struct TableView: View {
             }
         }
     }
-
+    
     var categoryBar: some View {
         VStack {
             List(session.backendData.categories.sorted {$0.id < $1.id}, id: \.self) { category in
@@ -347,6 +348,12 @@ struct TableView: View {
                 message = ""
             })
             Button("Annuleren", role: .cancel, action: {})
+        })
+    }
+    
+    var functionsView: some View {
+        SelectionButton(text: "Split", size: 200, action1: {
+            session.state = .splitTable 
         })
     }
 }

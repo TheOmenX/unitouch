@@ -27,10 +27,12 @@ struct ContentView: View {
                     LoadingView()
                 case .order:
                     TableView(session: session)
+                case .splitTable:
+                    SplitTableView(session: session)
                 case .payment(let balance, let bill):
                     PaymentView(session: session, balance: balance, bill: bill)
                 case .splitSelection(let table, let nextState):
-                    SplitTableView(session: session, nextState: nextState, table: table)
+                    SubTableSelectionView(session: session, nextState: nextState, table: table)
                 case .userSelection:
                     LoginView(
                         users: session.backendData.users,

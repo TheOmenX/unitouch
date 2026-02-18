@@ -60,21 +60,26 @@ class UnitouchProduct {
         
         guard
             parts.count >= 10,
-            let plu = Int(parts[0])
+            let plu = Int(parts[0]),
+            let page = Int(parts[2]),
+            let price = Double(parts[3]),
+            let lookup = Int(parts[5]),
+            let rang = Int(parts[6]),
+            let unk3 = Int(parts[9])
         else {
             return nil
         }
         
         self.plu = plu
         self.name = String(parts[1])
-        self.page = Int(parts[2]) ?? -1
-        self.price = Double(parts[3]) ?? -1.1
+        self.page = page
+        self.price = price
         self.unk1 = (parts[4] == "T")
         self.lookup = Int(parts[5]) ?? 0
         self.rang = Int(parts[6]) ?? -1
         self.followPrevious = (parts[7] == "T")
         self.unk2 = (parts[8] == "T")
-        self.unk3 = Int(parts[9]) ?? -1
+        self.unk3 = unk3
     }
 }
 
@@ -166,10 +171,20 @@ struct NewItem: Hashable, Identifiable {
     var unk1: String
     var price: Int
     var comment: Bool
+    var delete: String = ""
+    var splitMove: Int = 0
     var listPlace: Int = 0
     
-    var output: String {
-        return "\(self.id)"
+    var outputNew: String {
+        return "\(user)\t\(plu)\t\(name)\t\(quantity)\t\(rang)\t\(unk1)\t\(price)\t\(comment ? "T" : "F")\t\t\(splitMove)\t\(listPlace)\t0\t0\t0\t0\t0\tF\n"
+    }
+    
+    var outputDelete: String {
+        return "\(user)\t\(plu)\t\(name)\t\(quantity)\t\(rang)\t\(unk1)\t\(price)\t\(comment ? "T" : "F")\tX\t\(splitMove)\t\(listPlace)\t0\t0\t0\t0\t0\tF\n"
+    }
+    
+    var outputSplitMove: String {
+        return "\(user)\t\(plu)\t\(name)\t\(quantity)\t\(rang)\t\(unk1)\t\(price)\t\(comment ? "T" : "F")\t*\t\(splitMove)\t\(listPlace)\t0\n"
     }
     
     init(
@@ -182,6 +197,7 @@ struct NewItem: Hashable, Identifiable {
         unk1: String = "F",
         price: Int,
         comment: Bool,
+        splitMove: Int = 0,
         listPlace: Int = 0
     ) {
         self.id = id
@@ -193,6 +209,7 @@ struct NewItem: Hashable, Identifiable {
         self.unk1 = unk1
         self.price = price
         self.comment = comment
+        self.splitMove = splitMove
         self.listPlace = listPlace
     }
     
@@ -201,12 +218,28 @@ struct NewItem: Hashable, Identifiable {
         
         guard
             parts.count >= 10,
-            parts[6].contains("."),
             let user = Int(parts[0]),
-            let plu = Int(parts[1])
-        else {
+            let plu = Int(parts[1]),
+            let splitMove = Int(parts[9]),
+            let listPlace = Int(parts[10])
+        else { return nil }
+
+        let priceStr = parts[6]
+        let priceCents: Int?
+        if priceStr.contains(".") {
+            if let d = Double(priceStr) {
+                priceCents = Int(round(d * 100))
+            } else {
+                return nil
+            }
+        } else if let cents = Int(priceStr) {
+            priceCents = cents
+        } else {
             return nil
         }
+        
+        guard let price = priceCents else { return nil }
+
         
         self.user = user
         self.plu = plu
@@ -214,9 +247,10 @@ struct NewItem: Hashable, Identifiable {
         self.quantity = Int(parts[3]) ?? -1
         self.rang = Int(parts[4]) ?? -1
         self.unk1 = "F"
-        self.price = Int(parts[6]) ?? -1 // TODO: Fix
+        self.price = price
         self.comment = parts[7]=="T" ? true : false
-        self.listPlace = Int(parts[10]) ?? -1
+        self.splitMove = splitMove
+        self.listPlace = listPlace
     }
 }
 

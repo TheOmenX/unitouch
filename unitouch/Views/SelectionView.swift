@@ -52,7 +52,11 @@ struct SelectionView: View {
                             SelectionButton(text: "Tafel", size: itemSize, action1:  {
                                 Task {
                                     if(session.currentTable != nil){
-                                        session.checkSplitTable(table: tableNum, nextState: .moveTable)
+                                        if session.currentTableItems.count > 0 {
+                                            session.checkSplitTable(table: tableNum, nextState: .splitTable)
+                                        } else {
+                                            session.checkSplitTable(table: tableNum, nextState: .openTable)
+                                        }
                                     }else {
                                         session.checkSplitTable(table: tableNum, nextState: .openTable)
                                     }
