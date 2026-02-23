@@ -21,6 +21,7 @@ enum AppState: Equatable {
     case splitTable(nextAction: SplitTableActions)                           // Screen 4: Split Table
     case order                                                          // Screen 4: The "Move or Pay" logic
     case payment(balance: Double, bill: String)
+    case tableMap(nextState: SubTableActions)
 }
 
 enum SubTableActions: Equatable {
@@ -51,6 +52,7 @@ class SessionManager: ObservableObject {
     var currentTable: TableInfo?
     @Published var currentTableItems: [NewItem] = []
     var currentSubTables: [SubTableInfo] = []
+    var tableStatus: [OpenTable] = []
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -115,8 +117,8 @@ class SessionManager: ObservableObject {
                 }
             case .error(let error):
                 print("Error: \(error)")
-            case .success:
-                print("Timestamp not recieved")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -127,8 +129,6 @@ class SessionManager: ObservableObject {
             // MARK: GET ALL USERS
             TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
                 switch response {
-                case .success(code: _, message: _):
-                    print("Error: Expeced to recieve data")
                 case .content(data: let data):
                     for line in data.split(separator: "\n") {
                         if let newUser = UnitouchUser(raw:String(line)) {
@@ -137,14 +137,14 @@ class SessionManager: ObservableObject {
                     }
                 case .error(let error):
                     print("Error: \(error)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             
             // MARK: GET ALL CATEGORIES
             TCPClient.shared.sendCommand("DATAGET TYPES.txt", type: .download) { response in
                 switch response {
-                case .success(code: _, message: _):
-                    print("Error: Expeced to recieve data")
                 case .content(data: let data):
                     for line in data.split(separator: "\n") {
                         if let newCategory = UnitouchCategory(raw:String(line)) {
@@ -153,14 +153,14 @@ class SessionManager: ObservableObject {
                     }
                 case .error(let error):
                     print("Error: \(error)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             
             // MARK: GET ALL ITEMS
             TCPClient.shared.sendCommand("DATAGET ART.txt", type: .download) { response in
                 switch response {
-                case .success(code: _, message: _):
-                    print("Error: Expeced to recieve data")
                 case .content(data: let data):
                     var temp_cat: [Int] = []
                     
@@ -185,15 +185,14 @@ class SessionManager: ObservableObject {
                     
                 case .error(let error):
                     print("Error: \(error)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             
-            
             // MARK: GET ALL LOOKUPS
-            TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) { response in
+            TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) {response in
                 switch response{
-                case .success(code: _, message: _):
-                    self.activeError = .noDataRecieved
                 case .content(data: let data):
                     for line in data.split(separator: "\n") {
                         let parts = line.split(separator: "\t")
@@ -207,9 +206,81 @@ class SessionManager: ObservableObject {
                     }
                 case .error(let error):
                     self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             
+            // MARK: GET ALL BACKGROUNDS
+            for i in 1...7 {
+                let filename = "288-back0\(i).jpg"
+                // 2. Send command with type .image
+                TCPClient.shared.sendCommand("BINDATAGET \(filename)", type: .image) { response in
+                    switch response {
+                    case .binary(let imageData):
+                        // 3. Convert Data to UIImage
+                        if let _ = UIImage(data: imageData) {
+                            DispatchQueue.main.async {
+                                self.backendData.backgrounds.append(UnitouchBackground(id: i, imageData: imageData))
+                            }
+                        } else {
+                            print("❌ Failed to create UIImage from data")
+                        }
+                        
+                    case .error(let error):
+                        print("❌ Image Fetch Error: \(error.localizedDescription)")
+                        
+                    case .success(let code, let message):
+                        print("⚠️ Unexpected text response: \(code) \(message)")
+                        
+                    case .content(_):
+                        break
+                    }
+                }
+            }
+            
+            // MARK: GET ALL TABLES
+            TCPClient.shared.sendCommand("DATAGET TBLCELL.txt", type: .download) { response in
+                switch response {
+                case .content(data: let data):
+                    for line in data.split(separator: "\n") {
+                        if let newTable = UnitouchTable(raw: String(line)) {
+                            self.backendData.tables.append(newTable)
+                        }
+                    }
+                case .error(let error):
+                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+                }
+            }
+            
+            // MARK: GET ALL COLORS
+            TCPClient.shared.sendCommand("DATAGET TBLCOLORS.txt", type: .download) { response in
+                switch response {
+                case .content(let data):
+                    let values = data.split(separator: "\t")
+                    
+                    for i in 0...(values.count/2-1) {
+                        guard
+                            let BTNFill = Int(values[i*2]),
+                            let BTNText = Int(values[i*2+1])
+                        else { continue }
+                        
+                        self.backendData.tableColors.append(
+                            UnitouchTableColor(
+                                BTNStatus: i,
+                                BTNFill: BTNFill,
+                                BTNText: BTNText
+                            )
+                        )
+                    }
+                case .error(let error):
+                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+                }
+            }
             
             //MARK: Save to database
             modelContext.insert(self.backendData)
@@ -227,10 +298,10 @@ class SessionManager: ObservableObject {
             case .success(_, _):
                 if setState { self.state = .main }
                 self.currentUser = user
-            case .content(_):
-                break
             case .error(let error):
                 self.activeError = .unknown(err: error.localizedDescription)
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -245,6 +316,7 @@ class SessionManager: ObservableObject {
         self.currentTable = nil
         self.currentTableItems = []
         self.currentSubTables = []
+        self.tableStatus = []
     }
     
     func closeTable(){
@@ -257,10 +329,10 @@ class SessionManager: ObservableObject {
                 }else {
                     self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel: \(code) \(message)")
                 }
-            case .content(_):
-                self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel")
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij het verlaten van tafel: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -269,10 +341,8 @@ class SessionManager: ObservableObject {
     // MARK: Functions for checking if a table consists of sub tables
     func checkSubTable(table: TableInfo, nextState: SubTableActions){
         currentSubTables = []
-        TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableRaw)", type: .download) { response in
+        TCPClient.shared.sendCommand("PLSTSPLIT \(table.formatTableFlat)", type: .download) { response in
             switch response {
-            case .success(let code , let message):
-                self.activeError = .unknown(err: "Onverwachte response bij splitsing status van tafel: \(code) \(message)")
             case .content(let data):
                 for line in data.split(separator: "\n") {
                     if let info = SubTableInfo(raw: String(line)){
@@ -288,6 +358,8 @@ class SessionManager: ObservableObject {
                 }
             case .error(_):
                 self.activeError = .unknown(err: "Kon splitsing status van tafel niet controleren")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -305,15 +377,14 @@ class SessionManager: ObservableObject {
         case .splitTable:
             self.finishSplitTable(newTable: nextTable)
         case .payTable:
-            print()
-            //TODO: session.payTable(table: newTable)
+            self.startPayment(table: nextTable)
         }
     }
     
     
     // MARK: Functions for entring tables
     func enterTable(table: TableInfo){
-        TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableRaw)", type: .download) { response in
+        TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableFlat)", type: .download) { response in
             switch response {
             case .success(let code, let message):
                 self.resetState()
@@ -335,6 +406,8 @@ class SessionManager: ObservableObject {
             case .error(let error):
                 self.resetState()
                 print("Error: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -346,10 +419,10 @@ class SessionManager: ObservableObject {
                 switch response {
                 case .success(_, _):
                     self.resetState()
-                case .content(data: _):
-                    self.activeError = .unknown(err: "Kon tafel niet sluiten")
                 case .error(let error):
                     self.activeError = .unknown(err: "Kon tafel niet sluiten, error: \(error)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             return
@@ -370,16 +443,16 @@ class SessionManager: ObservableObject {
         }
         
         // Upload new items and deleted items to server
-        TCPClient.shared.sendUploadCommand("ACCPUT 1 \(table.formatTableRaw)", payload: data) { response in
+        TCPClient.shared.sendUploadCommand("ACCPUT 1 \(table.formatTableFlat)", payload: data) { response in
             switch response {
             case .success(_, _):
                 self.state = .main
                 self.currentTable = nil
                 self.currentTableItems = []
-            case .content(data: _):
-                self.activeError = .unknown(err: "Kon tafel niet sluiten")
             case .error(let error):
                 self.activeError = .unknown(err: "Kon tafel niet sluiten, error: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -387,7 +460,7 @@ class SessionManager: ObservableObject {
     
     // MARK: Functions for moving tables
     func startMoveTable(newTable: TableInfo) {
-        TCPClient.shared.sendCommand("ACCGET 1 \(newTable.formatTableRaw)") { response in
+        TCPClient.shared.sendCommand("ACCGET 1 \(newTable.formatTableFlat)") { response in
             switch response {
             case .success(let code, let message):
                 if code == 201 {
@@ -398,10 +471,10 @@ class SessionManager: ObservableObject {
                 }else {
                     self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(code) \(message)")
                 }
-            case .content(_):
-                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel")
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -413,7 +486,7 @@ class SessionManager: ObservableObject {
             self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
             return
         }
-        TCPClient.shared.sendCommand("ACCMOVE 1 \(currentTable.formatTableRaw) 1 \(newTable.formatTableRaw)") { response in
+        TCPClient.shared.sendCommand("ACCMOVE 1 \(currentTable.formatTableFlat) 1 \(newTable.formatTableFlat)") { response in
             switch response {
             case .success(let code, let message):
                 if code == 200 {
@@ -424,10 +497,10 @@ class SessionManager: ObservableObject {
                 }else {
                     self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(code) \(message)")
                 }
-            case .content(_):
-                self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel")
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij verplaatsen tafel: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -446,7 +519,7 @@ class SessionManager: ObservableObject {
     func continueSplitTable() {
         guard case let .splitTable(nextAction) = self.state else { return }
         let next = nextAction
-            
+        
         if next == .move {
             self.state = .main
         } else {
@@ -467,7 +540,7 @@ class SessionManager: ObservableObject {
         let items = self.currentTableItems.filter { $0.splitMove > 0 }
         let data = items.map { $0.outputSplitMove }.joined()
         
-        TCPClient.shared.sendUploadCommand("ACCSPLIT 1 \(currentTable.formatTableRaw) 1 \(newTable.formatTableRaw)", payload: data, completion: { response in
+        TCPClient.shared.sendUploadCommand("ACCSPLIT 1 \(currentTable.formatTableFlat) 1 \(newTable.formatTableFlat)", payload: data, completion: { response in
             switch response {
             case .success(let code, let message):
                 if code == 200 {
@@ -475,20 +548,17 @@ class SessionManager: ObservableObject {
                 } else {
                     self.activeError = .unknown(err: "Onverwachte response bij splitsen tafel: \(code) \(message)")
                 }
-            case .content(_):
-                break
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij splitsen tafel: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         })
     }
     
-    
-    
-    
     // MARK: Functions for paying tables
     func startPayment(table: TableInfo){
-        TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
+        TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableFlat)") { response in
             switch response {
             case .success(let code, let message):
                 if code == 200 {
@@ -508,6 +578,8 @@ class SessionManager: ObservableObject {
                         case .success:
                             self.state = .payment(balance: Double(balance), bill: "")
                             self.currentTable = table
+                        default:
+                            self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                         }
                     }
                 } else{
@@ -520,11 +592,10 @@ class SessionManager: ObservableObject {
                         self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(code) \(message)")
                     }
                 }
-            case .content(let data):
-                print(data)
-                break
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -537,7 +608,7 @@ class SessionManager: ObservableObject {
             self.activeError = .unknown(err: "Geen actieve tafel geselecteerd")
             return
         }
-        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(currentTable.formatTableRaw)",
+        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(currentTable.formatTableFlat)",
                                            payload: "\(methodId)\t\(methodName)\t\(currentUser.id)\t1\t1\t\(currentUser.name)\t\t0\tRepBillSmall\t0") { response in
             switch response {
             case .success(let code, let message):
@@ -548,8 +619,8 @@ class SessionManager: ObservableObject {
                 }
             case .error(let error):
                 self.activeError = .unknown(err: "Onverwachte response bij afronden betaling: \(error)")
-            case .content(_):
-                break
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
         }
     }
@@ -560,16 +631,15 @@ class SessionManager: ObservableObject {
             let currentUser = self.currentUser,
             total == 0 || total >= amount
         else { return }
-        let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableRaw)"
+        let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableFlat)"
         let tipAmount = total - amount
+        let tipString = tipAmount > 0 ? "&tipAmount=\(Int(tipAmount*100))" : ""
         guard
-            let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))&tipAmount=\(Int(tipAmount*100))&clientTransactionId=\(clientTransactionId)")
+            let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))\(tipString)&clientTransactionId=\(clientTransactionId)")
         else {
             self.activeError = .invalidVivaWalletURL
             return
         }
-        
-
         
         UIApplication.shared.open(url, options: [:]) { success in
             if !success {
@@ -582,7 +652,7 @@ class SessionManager: ObservableObject {
     func finishVivaPayment(table: TableInfo, amount: Double, tipAmount: Double, userId: Int, userName: String){
         /// The application went to sleep and the connection was closed, meaning we have to check wether the table is still available
         if self.currentTable == nil {
-            TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableRaw)") { response in
+            TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableFlat)") { response in
                 switch response {
                 case .success(let code, let message):
                     guard
@@ -595,7 +665,7 @@ class SessionManager: ObservableObject {
                     if balance != amount {
                         self.activeError = .vivaBalanceMismatch(expected: balance, received: amount)
                     } else {
-                        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(table.formatTableRaw)",
+                        TCPClient.shared.sendUploadCommand("ACCPAY 1 \(table.formatTableFlat)",
                                                            payload: "97\tInterpay Plus\t\(userId)\t1\t1\t\(userName)\t\t0\tRepBillSmall\t0") { response in
                             switch response {
                             case .success(let code, let message):
@@ -606,22 +676,43 @@ class SessionManager: ObservableObject {
                                 }
                             case .error(let error):
                                 self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
-                            case .content(_):
-                                break
+                            default:
+                                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                             }
                         }
                         
                     }
-                case .content(_):
-                    break
                 case .error(let error):
                     self.activeError = .vivaPaymentProcessingError(message: error.localizedDescription)
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
                 }
             }
             
         } else {
             self.finishPayment(methodId: 97, methodName: "Interpay Plus")
             self.resetState()
+        }
+    }
+    
+    // MARK: Functions for table map
+    func startTableMap(nextState: SubTableActions){
+        TCPClient.shared.sendCommand("PLSTOPEN 1", type: .download) { response in
+            switch response{
+            case .content(let data):
+                self.tableStatus = []
+                for line in data.split(separator: "\n") {
+                    if let info = OpenTable(raw: String(line)){
+                        print(info)
+                        self.tableStatus.append(info)
+                    }
+                }
+                self.state = .tableMap(nextState: nextState)
+            case .error(let error):
+                self.activeError = .unknown(err: "Kon tafel plattegrond niet openen: \(error.localizedDescription)")
+            default:
+                self.activeError = .unknown(err: "Kon tafel plattegrond niet openen:")
+            }
         }
     }
 }

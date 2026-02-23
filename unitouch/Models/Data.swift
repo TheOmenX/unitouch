@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import UIKit
 
 
 @Model
@@ -16,6 +17,9 @@ class BackendData {
     @Relationship var categories: [UnitouchCategory] = []
     @Relationship var users: [UnitouchUser] = []
     @Relationship var lookups: [UnitouchLookup] = []
+    @Relationship var backgrounds: [UnitouchBackground] = []
+    @Relationship var tables: [UnitouchTable] = []
+    @Relationship var tableColors: [UnitouchTableColor] = []
 
     init() {
         self.timestamp = UUID().uuidString
@@ -26,6 +30,10 @@ class BackendData {
         self.items.removeAll()
         self.categories.removeAll()
         self.users.removeAll()
+        self.users.lookups.removeAll()
+        self.backgrounds.removeAll()
+        self.tables.removeAll()
+        self.tableColors.removeAll()
     }
 }
 
@@ -160,6 +168,92 @@ class UnitouchLookup {
         self.items = [child]
     }
 }
+
+@Model
+class UnitouchBackground {
+    var id: Int
+    var imageData: Data
+    
+    init(id: Int, imageData: Data) {
+        self.id = id
+        self.imageData = imageData
+    }
+    
+    var image: UIImage {
+        get { UIImage(data: imageData) ?? UIImage() }
+        set { imageData = newValue.pngData() ?? Data() }
+    }
+}
+
+@Model
+class UnitouchTable {
+    var id = UUID()
+    var BTNfrmCnt: Int
+    var BTNcllCnt: Int
+    var BTNlabel: String
+    var BTNx: Int
+    var BTNy: Int
+    var BTNw: Int
+    var BTNh: Int
+    var BTNr: Int
+    var BTNaccNum: Int
+    
+    init(BTNfrmCnt: Int, BTNcllCnt: Int, BTNlabel: String, BTNx: Int, BTNy: Int, BTNw: Int, BTNh: Int, BTNr: Int, BTNaccNum: Int) {
+        self.BTNfrmCnt = BTNfrmCnt          // On what screen it appears
+        self.BTNcllCnt = BTNcllCnt          // Local screen id
+        self.BTNlabel = BTNlabel            // Label of table
+        self.BTNx = BTNx                    // X position on screen
+        self.BTNy = BTNy                    // Y position on screen
+        self.BTNw = BTNw                    // Width of table button
+        self.BTNh = BTNh                    // Height of table button
+        self.BTNr = BTNr                    // ???? No fucking clue (seems to be font size or something)
+        self.BTNaccNum = BTNaccNum          // Actual table number
+    }
+    
+    init?(raw: String){
+        let parts = raw.split(separator: "\t")
+        
+        guard
+            parts.count >= 9,
+            let BTNfrmCnt = Int(parts[0]),
+            let BTNcllCnt = Int(parts[1]),
+            let BTNx = Int(parts[3]),
+            let BTNy = Int(parts[4]),
+            let BTNw = Int(parts[5]),
+            let BTNh = Int(parts[6]),
+            let BTNr = Int(parts[7]),
+            let BTNaccNum = Int(parts[8])
+        else {
+            return nil
+        }
+        
+        self.BTNfrmCnt = BTNfrmCnt
+        self.BTNcllCnt = BTNcllCnt
+        self.BTNlabel = String(parts[2])
+        self.BTNx = BTNx
+        self.BTNy = BTNy
+        self.BTNw = BTNw
+        self.BTNh = BTNh
+        self.BTNr = BTNr
+        self.BTNaccNum = BTNaccNum
+    }
+}
+
+@Model
+class UnitouchTableColor {
+    var id = UUID()
+    var BTNStatus: Int
+    var BTNFill: Int
+    var BTNText: Int
+    
+    init(id: UUID = UUID(), BTNStatus: Int, BTNFill: Int, BTNText: Int) {
+        self.id = id
+        self.BTNStatus = BTNStatus
+        self.BTNFill = BTNFill
+        self.BTNText = BTNText
+    }
+}
+
 
 struct NewItem: Hashable, Identifiable {
     var id = UUID()
@@ -299,8 +393,6 @@ struct TableInfo: Equatable {
         self.rawTable = "\(tableNum).\(subTableNum)"
     }
     
-    
-
     var table: Int {
         if rawTable.contains(".") {
             return Int(rawTable.split(separator: ".")[0]) ?? 0
@@ -320,11 +412,11 @@ struct TableInfo: Equatable {
         return rawTable.split(separator: ".").count > 1
     }
     
-    var formatTableRaw: String {
+    var formatTableFlat: String {
         return String(format: "%d%d", table, subTable)
     }
     
-    var formatTable: String {
+    var formatTableRaw: String {
         return String(format: "%d.%d", table, subTable)
     }
     
@@ -332,6 +424,47 @@ struct TableInfo: Equatable {
         self.rawTable = "\(table).\(subTable)"
     }
     
+}
+
+struct OpenTable {
+    var tableInfo: TableInfo
+    var balance: Double
+    var time: String
+    var comment: String
+    var unk1: Int
+    var status: Int
+    
+    init(tableInfo: TableInfo, balance: Double, time: String, comment: String, unk1: Int, status: Int) {
+        self.tableInfo = tableInfo
+        self.tableInfo = tableInfo
+        self.balance = balance
+        self.time = time
+        self.comment = comment
+        self.unk1 = unk1
+        self.status = status
+    }
+    
+    init?(raw: String) {
+        let parts = raw.components(separatedBy: "\t")
+        
+        guard
+            parts.count >= 8,
+            let tableInfo = TableInfo(flatTable: String(parts[0])),
+            let balance = Double(parts[1]),
+            let unk1 = Int(parts[4]),
+            let status = Int(parts[7])
+        else {
+            return nil
+        }
+        
+        self.tableInfo = tableInfo
+        self.balance = balance
+        self.time = parts[2]
+        self.comment = parts[3]
+        self.unk1 = unk1
+        self.status = status
+        
+    }
 }
 
 

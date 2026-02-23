@@ -57,8 +57,13 @@ struct SelectionView: View {
                                         } else {
                                             session.checkSubTable(table: tableNum, nextState: .moveTable)
                                         }
-                                    }else {
-                                        session.checkSubTable(table: tableNum, nextState: .openTable)
+                                    }else{
+                                        print(tableNum.rawTable)
+                                        if tableNum.table != 0 {
+                                            session.checkSubTable(table: tableNum, nextState: .openTable)
+                                        }else {
+                                            session.startTableMap(nextState: .openTable)
+                                        }
                                     }
                                     tableNum.rawTable = ""
                                 }
@@ -81,7 +86,11 @@ struct SelectionView: View {
                         }
                         GridRow {
                             SelectionButton(text: (session.currentTable == nil) ? "Betalen" :  "", size: itemSize, action1: {
-                                session.startPayment(table: tableNum)
+                                if tableNum.table != 0 {
+                                    session.startPayment(table: tableNum)
+                                } else {
+                                    session.startTableMap(nextState: .payTable)
+                                }
                             })
                             SelectionButton(text: "1", size: itemSize, action1:
                                                 {addTableNum("1")})

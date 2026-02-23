@@ -13,14 +13,16 @@ import UIKit
 
 enum RequestType {
     case standard   // Expects: Command -> Response
-    case download   // Expects: Command -> 201 -> Content -> //END
-    case upload     // Expects: Command -> 201 -> Client Sends Data -> Response
+    case download   // Expects: Command -> 201 1            -> Content -> //END
+    case image      // Expects: Command -> 201 <no. bytes>  -> Sever Sends Image Data -> //END
+    case upload     // Expects: Command -> 201 1            -> Client Sends Data -> Response
 }
 
 enum ServerResponse {
     case success(code: Int, message: String)
     case content(data: String)
     case error(Error)
+    case binary(data: Data)
 }
 
 enum ConnectionStatus {
@@ -46,7 +48,8 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
     @Published var connectionStatus: ConnectionStatus = .disconnected
     
     // MARK: - Configuration
-    private let host = "unitouch.tijngiesberts.nl"
+    //private let host = "unitouch.tijngiesberts.nl"
+    private let host = "192.168.101.66"
     private let port: UInt16 = 1026
     
     // MARK: - Private Properties
@@ -57,6 +60,10 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
     private var buffer = Data()
     private var isReadingContent = false
     private var contentBuffer = ""
+    
+    // Image retreiving
+    private var isReadingBinary = false
+    private var expectedBinaryLength = 0
     
     // Request State
     private var activeRequestType: RequestType = .standard
@@ -257,62 +264,101 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
     // MARK: - Protocol Parsing
     
     private func processBuffer() {
-        while let range = buffer.range(of: Data("\n".utf8)) {
-            let lineData = buffer.subdata(in: 0..<range.lowerBound)
-            buffer.removeSubrange(0..<range.upperBound)
+            // 1. BINARY MODE: If we are waiting for image data, ignore newlines
+            if isReadingBinary {
+                if buffer.count >= expectedBinaryLength {
+                    // Extract the exact bytes for the image
+                    let imageData = buffer.subdata(in: 0..<expectedBinaryLength)
+                    
+                    // Remove image data from buffer (leave any subsequent responses)
+                    buffer.removeSubrange(0..<expectedBinaryLength)
+                    
+                    // Reset State
+                    isReadingBinary = false
+                    expectedBinaryLength = 0
+                    
+                    dispatchSuccess(code: 200, message: "Image Recieved", binaryPayload: imageData)
+                }
+                return // Wait for more data if buffer.count < expectedBinaryLength
+            }
             
-            if let lineString = String(data: lineData, encoding: .windowsCP1252) {
-                handleLine(lineString.trimmingCharacters(in: .newlines))
+            // 2. TEXT MODE: Process line by line
+            while let range = buffer.range(of: Data("\n".utf8)) {
+                // Check if we switched to binary mode during the last loop iteration
+                if isReadingBinary { break }
+                
+                let lineData = buffer.subdata(in: 0..<range.lowerBound)
+                buffer.removeSubrange(0..<range.upperBound)
+                
+                // Try to decode as WindowsCP1252 (fallback to UTF8)
+                if let lineString = String(data: lineData, encoding: .windowsCP1252) ?? String(data: lineData, encoding: .utf8) {
+                    handleLine(lineString.trimmingCharacters(in: .newlines))
+                }
+            }
+            
+            // After loop, check again if we switched to binary mode and have enough data already
+            if isReadingBinary && buffer.count >= expectedBinaryLength {
+                processBuffer() // Recursive call to handle the binary block immediately
             }
         }
-    }
     
     private func handleLine(_ line: String) {
-        if line.contains("100 Welcome") {
-            print("📥 TCP: Received Welcome Message.")
-            self.processNextRequest()
-            return
-        }
-        
-        
-        if isReadingContent {
-            if line == "//END" {
-                isReadingContent = false
-                let finalContent = contentBuffer
-                contentBuffer = ""
-                dispatchSuccess(code: 200, message: "Download Complete", dataPayload: finalContent)
-            } else {
-                contentBuffer += line + "\n"
+            // ... Existing Welcome Message Check ...
+            if line.contains("100 Welcome") {
+                print("📥 TCP: Received Welcome Message.")
+                self.processNextRequest()
+                return
             }
-            return
-        }
-        
-        let components = line.contains("\t") ? line.split(separator: "\t", maxSplits: 1).map(String.init) : line.split(separator: " ", maxSplits: 1).map(String.init)
-        guard let codeString = components.first, let code = Int(codeString) else {
-            // Ignore malformed lines if needed, or handle as error
-            return
-        }
-        
-        let message = components.count > 1 ? components[1] : ""
-        
-        if code == 201 {
-            if activeRequestType == .download {
-                isReadingContent = true
-                contentBuffer = ""
+            
+            // ... Existing .download Logic ...
+            if isReadingContent {
+                if line == "//END" {
+                    isReadingContent = false
+                    let finalContent = contentBuffer
+                    contentBuffer = ""
+                    dispatchSuccess(code: 200, message: "Download Complete", dataPayload: finalContent)
+                } else {
+                    contentBuffer += line + "\n"
+                }
+                return
             }
-            else if activeRequestType == .upload {
-                if let payload = pendingUploadPayload {
-                    print("📤 TCP: Sending Upload Payload...")
-                    send(data: payload)
-                    pendingUploadPayload = nil
+            
+            let components = line.contains("\t") ? line.split(separator: "\t", maxSplits: 1).map(String.init) : line.split(separator: " ", maxSplits: 1).map(String.init)
+            guard let codeString = components.first, let code = Int(codeString) else { return }
+            let message = components.count > 1 ? components[1] : ""
+            
+            if code == 201 {
+                if activeRequestType == .download {
+                    isReadingContent = true
+                    contentBuffer = ""
+                }
+                else if activeRequestType == .upload {
+                    // ... Existing Upload Logic ...
+                    if let payload = pendingUploadPayload {
+                        send(data: payload)
+                        pendingUploadPayload = nil
+                    }
+                }
+                else if activeRequestType == .image {
+                    // NEW: Image Logic
+                    // Message should contain the byte count (e.g., "201 54320")
+                    if let size = Int(message.trimmingCharacters(in: .whitespaces)) {
+                        print("📥 TCP: Expecting Image of size: \(size) bytes")
+                        expectedBinaryLength = size
+                        isReadingBinary = true
+                        // Note: We return here. processBuffer loop will break and handle the binary data.
+                    } else {
+                        dispatchError(NSError(domain: "TCPClient", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid image size header"]))
+                    }
+                }
+                else {
+                    dispatchSuccess(code: code, message: message)
                 }
             } else {
                 dispatchSuccess(code: code, message: message)
             }
-        } else {
-            dispatchSuccess(code: code, message: message)
         }
-    }
+        
     
     // MARK: - Dispatch & Queue Management
     
@@ -320,19 +366,19 @@ class TCPClient: ObservableObject { // Changed to ObservableObject for SwiftUI c
         return str.hasSuffix("\n") ? str : str + "\n"
     }
     
-    private func dispatchSuccess(code: Int, message: String, dataPayload: String? = nil) {
-        // 1. Capture completion to main thread
+    private func dispatchSuccess(code: Int, message: String, dataPayload: String? = nil, binaryPayload: Data? = nil) {
         let completionToCall = self.currentCompletion
         
         DispatchQueue.main.async {
-            if let data = dataPayload {
+            if let binary = binaryPayload {
+                completionToCall?(.binary(data: binary))
+            } else if let data = dataPayload {
                 completionToCall?(.content(data: data))
             } else {
                 completionToCall?(.success(code: code, message: message))
             }
         }
         
-        // 2. Clear current request and start next
         finishCurrentRequest()
     }
     

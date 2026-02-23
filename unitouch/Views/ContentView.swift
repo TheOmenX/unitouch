@@ -43,6 +43,8 @@ struct ContentView: View {
                         })
                 case .main:
                     SelectionView(session: session)
+                case .tableMap(let nextState):
+                    TableMapView(session: session, nextState: nextState)
                 default:
                     LoadingView()
                 }

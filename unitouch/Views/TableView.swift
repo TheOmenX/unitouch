@@ -35,7 +35,7 @@ struct TableView: View {
     var body: some View {
         VStack{
             ZStack {
-                Text("Account - Tafel \(session.currentTable?.formatTable ?? "-")")
+                Text("Account - Tafel \(session.currentTable?.formatTableRaw ?? "-")")
             }
             .frame(maxWidth: .infinity)
             .background(Color.gray)
