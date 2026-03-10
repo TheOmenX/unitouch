@@ -632,8 +632,8 @@ class SessionManager: ObservableObject {
             total == 0 || total >= amount
         else { return }
         let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableFlat)"
-        let tipAmount = total - amount
-        let tipString = tipAmount > 0 ? "&tipAmount=\(Int(tipAmount*100))" : ""
+        let tipAmount = total*100 - amount*100
+        let tipString = tipAmount > 0 ? "&tipAmount=\(Int(tipAmount))" : ""
         guard
             let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))\(tipString)&clientTransactionId=\(clientTransactionId)")
         else {
