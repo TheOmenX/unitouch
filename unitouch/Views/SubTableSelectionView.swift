@@ -71,10 +71,9 @@ struct SubTableSelectionView: View {
                     SelectionButton(
                         text: "Annuleren",
                         width: geometry.size.width / 3 - 6,
-                        height: geometry.size.width / 4 - 6
-                    ) {
-                        session.resetState()
-                    }
+                        height: geometry.size.width / 4 - 6,
+                        action1: {session.resetState()}
+                    )
                     SelectionButton(
                         text: "",
                         width: geometry.size.width / 3 - 6,

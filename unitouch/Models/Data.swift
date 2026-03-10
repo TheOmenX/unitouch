@@ -30,7 +30,7 @@ class BackendData {
         self.items.removeAll()
         self.categories.removeAll()
         self.users.removeAll()
-        self.users.lookups.removeAll()
+        self.lookups.removeAll()
         self.backgrounds.removeAll()
         self.tables.removeAll()
         self.tableColors.removeAll()
@@ -83,8 +83,8 @@ class UnitouchProduct {
         self.page = page
         self.price = price
         self.unk1 = (parts[4] == "T")
-        self.lookup = Int(parts[5]) ?? 0
-        self.rang = Int(parts[6]) ?? -1
+        self.lookup = lookup
+        self.rang = rang
         self.followPrevious = (parts[7] == "T")
         self.unk2 = (parts[8] == "T")
         self.unk3 = unk3

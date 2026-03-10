@@ -100,8 +100,13 @@ struct TableView: View {
                         }
                         
                         Button(action: {
-                            if !newItems.isEmpty && newItems.last?.plu != 1999 {
+                            if let last = newItems.last, last.plu != 1999 {
                                 newItems.removeLast()
+                                if let idx = session.blockedItems.firstIndex(where: {$0.plu == last.plu}) {
+                                    session.blockedItems[idx].count += last.quantity
+                                    session.addBlockedItem(plu: last.plu, count: last.quantity)
+                                    
+                                }
                             }
                         }) {
                             ZStack {
@@ -170,14 +175,32 @@ struct TableView: View {
                     .filter { (it: UnitouchProduct) in it.page == selectedId },
                 id: \.self
             ) { item in
-                Text(item.name)
-                    .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
-                    .contentShape(Rectangle())
-                    .padding(.vertical, 8)
-                    .listRowInsets(EdgeInsets())
-                    .onTapGesture {
-                        createNewItem(item: item)
+                HStack{
+                    Text(item.name)
+                        .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                        .contentShape(Rectangle())
+                        .padding(.vertical, 8)
+                        .listRowInsets(EdgeInsets())
+                        .onTapGesture {
+                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+                                if session.blockedItems[idx].count > 0 {
+                                    session.blockedItems[idx].count -= 1
+                                    session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
+                                        createNewItem(item: item)
+                                    }
+                                }else {
+                                    session.activeError = .itemBlocked
+                                }
+                            }
+                            else {
+                                createNewItem(item: item)
+                            }
+                        }
+                    if let blocked = session.blockedItems.first(where: {$0.plu == item.plu}) {
+                        Text(String(blocked.count))
+                            .font(.caption)
                     }
+                }
             }
             .listStyle(.plain)
         }
@@ -271,18 +294,15 @@ struct TableView: View {
                                 .padding()
                             
                             HStack(){
-                                SelectionButton(text: "Tekst", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                                {
+                                SelectionButton(text: "Tekst", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {
                                     textItemIndex = (newItems.firstIndex(of: item) ?? -2)
-                                    
                                     if(textItemIndex > -1) {addTextAlert = true}
-                                }
+                                })
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             HStack{
-                                SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                                {clickedItem = nil}
-                                SelectionButton(text: "Verwijder", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
+                                SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil} )
+                                SelectionButton(text: "Verwijder", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1:
                                 {
                                     if(newItems.contains(item)){
                                         var start = -1;
@@ -318,8 +338,14 @@ struct TableView: View {
                                             }
                                         }
                                     }
+                                    
+                                    if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+                                        session.blockedItems[idx].count += item.quantity
+                                        session.addBlockedItem(plu: item.plu, count: item.quantity)
+                                    }
+                                    
                                     clickedItem = nil
-                                }
+                                })
                                 SelectionButton(text: "Ok", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil})
                             }
                         }

@@ -162,7 +162,7 @@ struct PaymentView: View {
                             height: buttonHeight,
                             disabled: (fooi != 0 && fooi < balance),
                             action2: {
-                                session.finishPayment(methodId: 2, methodName: "Viva Wallet")
+                                session.finishPayment(methodId: 97, methodName: "Viva Wallet")
                             }, action1: {
                                 session.vivaPayment(amount: balance, total: fooi)
                             })

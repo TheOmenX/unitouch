@@ -59,4 +59,7 @@ unitouch://result?transactionId=03e62a3b-a05d-4941-a194-f12722b7a4ab&transaction
 400 Syntax Error
 401 Account Locked
 402 Destination Account Locked
+425 Quantity not available
 426 
+
+503 Command not supported

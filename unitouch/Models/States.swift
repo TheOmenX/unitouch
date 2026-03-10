@@ -18,6 +18,10 @@ enum UnitouchError: Error, Identifiable {
 
     case noDataRecieved
     
+    case noBlockedItemsReceived
+    case itemBlocked
+    case invalidBlockedItemQuantity
+    
     case vivaWalletError
     case invalidVivaWalletURL
     case openingVivaWalletFailed
@@ -37,6 +41,10 @@ enum UnitouchError: Error, Identifiable {
         case .timeout: return "timeout"
 
         case .noDataRecieved: return "noDataRecieved"
+            
+        case .noBlockedItemsReceived: return "noBlockedItemReceived"
+        case .itemBlocked: return "itemBlocked"
+        case .invalidBlockedItemQuantity: return "invalidBlockedItemQuantity"
             
         case .vivaWalletError: return "vivaWalletError"
         case .invalidVivaWalletURL: return "invalidVivaWalletURL"
@@ -67,6 +75,13 @@ enum UnitouchError: Error, Identifiable {
 
         case .noDataRecieved:
             return "De server heeft geen data teruggestuurd."
+            
+        case .noBlockedItemsReceived:
+            return "Er zijn geen geblokkeerde items te verwijderen."
+        case .itemBlocked:
+            return "Dit item is geblokkeerd en kan niet worden aangepast."
+        case .invalidBlockedItemQuantity:
+            return "De hoeveelheid van een geblokkeerd item kan niet worden aangepast. Probeer het opnieuw."
             
         case .vivaWalletError:
             return "Viva Wallet heeft een foutmelding teruggestuurd."

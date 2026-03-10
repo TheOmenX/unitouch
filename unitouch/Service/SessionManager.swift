@@ -36,6 +36,11 @@ enum SplitTableActions: Equatable {
     case pay
 }
 
+struct blockedItem {
+    var plu: Int
+    var count: Int
+}
+
 
 @MainActor
 class SessionManager: ObservableObject {
@@ -53,6 +58,7 @@ class SessionManager: ObservableObject {
     @Published var currentTableItems: [NewItem] = []
     var currentSubTables: [SubTableInfo] = []
     var tableStatus: [OpenTable] = []
+    var blockedItems: [blockedItem] = []
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -407,8 +413,28 @@ class SessionManager: ObservableObject {
                 self.resetState()
                 print("Error: \(error)")
             default:
-                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+                self.activeError = .unknown(err: "Onverwachte response bij het openen van tafel ")
             }
+        }
+        self.blockedItems = []
+        TCPClient.shared.sendCommand("GETPLULOCKS2", type: .download) { response in
+            switch response {
+            case .success(_, let message):
+                let items = message.split(separator: "/")
+                for item in items{
+                    let plu = item.split(separator: ":")[0]
+                    let count = item.split(separator: ":")[1]
+                    
+                    if let pluInt = Int(plu), let countInt = Int(count) {
+                        self.blockedItems.append(blockedItem(plu: pluInt, count: countInt))
+                    }
+                }
+            case .error:
+                self.activeError = .noBlockedItemsReceived
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij het openen van tafel ")
+            }
+            
         }
     }
     
@@ -454,6 +480,27 @@ class SessionManager: ObservableObject {
             default:
                 self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
+        }
+    }
+    
+    func addBlockedItem(plu: Int, count: Int, completion: (() -> Void)? = nil) {
+        TCPClient.shared.sendCommand("ADDPLULCKCNT \(plu) \(count)") {response in
+            switch response {
+            case .success(let code, let message):
+                switch code {
+                case 200:
+                    completion?()
+                case 425:
+                    self.activeError = .invalidBlockedItemQuantity
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij toevoegen geblokkeerd item: \(code) \(message)")
+                }
+            case .error(let error):
+                self.activeError = .unknown(err: error.localizedDescription)
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij toevoegen geblokkeerd item")
+            }
+            
         }
     }
     
