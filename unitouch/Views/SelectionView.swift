@@ -22,6 +22,15 @@ struct SelectionView: View {
     var payments: [Payment]
     
     var body: some View {
+        TabView{
+            selectionView
+            PaymentListView(payments: payments)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+        
+        
+    var selectionView: some View {
         ZStack{
             GeometryReader { geometry in
                 let columns = 4
@@ -145,6 +154,84 @@ struct SelectionView: View {
         
         tableNum.rawTable += symbol
     }
+}
+
+
+struct PaymentListView: View {
+    var payments: [Payment]
+    
+    // 1. Create a structured tuple for our grouped data
+    var groupedPayments: [(date: Date, payments: [Payment], totalTips: Decimal)] {
+        // Group by the start of the day (ignoring time)
+        let grouped = Dictionary(grouping: payments) { payment in
+            Calendar.current.startOfDay(for: payment.time)
+        }
+        
+        // Map the dictionary into our tuple and calculate the total tips
+        return grouped.map { (date, dailyPayments) in
+            let totalTips = dailyPayments.reduce(Decimal(0)) { $0 + $1.tip }
+            return (date: date, payments: dailyPayments, totalTips: totalTips)
+        }
+        // Sort by date, newest first
+        .sorted { $0.date > $1.date }
+    }
+    
+    var body: some View {
+            NavigationStack {
+                List {
+                    // Loop through the groups (days)
+                    ForEach(groupedPayments, id: \.date) { group in
+                        
+                        // Create a Section for each day
+                        Section(header: sectionHeader(date: group.date, totalTips: group.totalTips)) {
+                            
+                            // Loop through the individual payments for that day
+                            ForEach(group.payments) { payment in
+                                HStack {
+                                    // Show just the time for the individual row
+                                    Text(payment.time, format: .dateTime.hour().minute())
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Text("Tafel \(payment.table)")
+                                        .padding(.leading, 8)
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing) {
+                                        Text(payment.amount.formatted(.currency(code: "EUR")))
+                                            .bold()
+                                        if payment.tip > 0 {
+                                            Text("Fooi: \(payment.tip.formatted(.currency(code: "EUR")))")
+                                                .font(.caption)
+                                                .foregroundStyle(.green)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Transacties")
+            }
+        }
+        
+        // Extracted the header to keep the code clean
+        @ViewBuilder
+        private func sectionHeader(date: Date, totalTips: Decimal) -> some View {
+            HStack {
+                // Display the date (e.g., "Oct 24, 2023")
+                Text(date, format: .dateTime.month().day().year())
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Display the total tips for this day
+                Text("Totale fooi: \(totalTips.formatted(.currency(code: "EUR")))")
+                    .font(.subheadline)
+                    .foregroundStyle(.green)
+            }
+            .padding(.vertical, 4)
+        }
 }
 
 

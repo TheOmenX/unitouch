@@ -648,7 +648,7 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func finishPayment(methodId: Int, methodName: String){
+    func finishPayment(methodId: Int, methodName: String, modelContext: ModelContext, amount: Decimal, tip: Decimal){
         guard
             let currentTable = self.currentTable,
             let currentUser = self.currentUser
@@ -662,6 +662,16 @@ class SessionManager: ObservableObject {
             case .success(let code, let message):
                 if code == 200 {
                     self.resetState()
+                    
+                    let payment = Payment(
+                        user: currentUser.name,
+                        table: currentTable.formatTableRaw,
+                        amount: amount,
+                        tip: tip
+                    )
+                    
+                    modelContext.insert(payment)
+                    try? modelContext.save()
                 } else {
                     self.activeError = .unknown(err: "Onverwachte response bij afronden betaling: \(code) \(message)")
                 }
@@ -697,7 +707,7 @@ class SessionManager: ObservableObject {
         
     }
     
-    func finishVivaPayment(table: TableInfo, amount: Double, tipAmount: Double, userId: Int, userName: String){
+    func finishVivaPayment(table: TableInfo, amount: Double, tipAmount: Double, userId: Int, userName: String, modelContext: ModelContext){
         /// The application went to sleep and the connection was closed, meaning we have to check wether the table is still available
         if self.currentTable == nil {
             TCPClient.shared.sendCommand("ACCBILL 1 \(table.formatTableFlat)") { response in
@@ -719,6 +729,15 @@ class SessionManager: ObservableObject {
                             case .success(let code, let message):
                                 if code == 200 {
                                     self.resetState()
+                                    
+                                    let payment = Payment(
+                                        user: userName,
+                                        table: table.formatTableRaw,
+                                        amount: Decimal(amount),
+                                        tip: Decimal(tipAmount)
+                                    )
+                                    modelContext.insert(payment)
+                                    try? modelContext.save()
                                 } else {
                                     self.activeError = .vivaPaymentProcessingError(message: message)
                                 }
@@ -738,7 +757,7 @@ class SessionManager: ObservableObject {
             }
             
         } else {
-            self.finishPayment(methodId: 97, methodName: "Interpay Plus")
+            self.finishPayment(methodId: 97, methodName: "Interpay Plus", modelContext: modelContext, amount: Decimal(amount), tip: Decimal(tipAmount))
             self.resetState()
         }
     }
