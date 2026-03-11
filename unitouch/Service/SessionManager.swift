@@ -20,7 +20,7 @@ enum AppState: Equatable {
     case main                                                           // Screen 3: Main Input
     case splitTable(nextAction: SplitTableActions)                           // Screen 4: Split Table
     case order                                                          // Screen 4: The "Move or Pay" logic
-    case payment(balance: Double, bill: String)
+    case payment(balance: Decimal, bill: String)
     case tableMap(nextState: SubTableActions)
 }
 
@@ -610,20 +610,21 @@ class SessionManager: ObservableObject {
             case .success(let code, let message):
                 if code == 200 {
                     guard
-                        let balance = Double(message.trimmingCharacters(in: .whitespacesAndNewlines))
+                        let balanceDouble = Double(message.trimmingCharacters(in: .whitespacesAndNewlines))
                     else {
                         self.activeError = .unknown(err: "Kon bedrag niet ophalen van de server") // MAKE ERROR
                         return
                     }
+                    let balance = Decimal(balanceDouble)
                     TCPClient.shared.sendCommand("GETBILL", type: .download) { response in
                         switch response {
                         case .content(let data):
-                            self.state = .payment(balance: Double(balance), bill: data)
+                            self.state = .payment(balance: balance, bill: data)
                             self.currentTable = table
                         case .error(let error):
                             self.activeError = .unknown(err: "Onverwachte response bij betalen tafel: \(error)")
                         case .success:
-                            self.state = .payment(balance: Double(balance), bill: "")
+                            self.state = .payment(balance: balance, bill: "")
                             self.currentTable = table
                         default:
                             self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
@@ -672,17 +673,17 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func vivaPayment(amount: Double, total: Double){
+    func vivaPayment(amount: Decimal, total: Decimal){
         guard
             let currentTable = self.currentTable,
             let currentUser = self.currentUser,
             total == 0 || total >= amount
         else { return }
         let clientTransactionId = "\(currentUser.id)-\(currentUser.name)-\(currentTable.formatTableFlat)"
-        let tipAmount = total*100 - amount*100
-        let tipString = tipAmount > 0 ? "&tipAmount=\(Int(tipAmount))" : ""
+        let tipAmount = total - amount
+        let tipString = tipAmount > 0 ? "&tipAmount=\(NSDecimalNumber(decimal: tipAmount*100))" : ""
         guard
-            let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(Int(amount*100))\(tipString)&clientTransactionId=\(clientTransactionId)")
+            let url = URL(string: "vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=\(NSDecimalNumber(decimal: amount*100))\(tipString)&clientTransactionId=\(clientTransactionId)")
         else {
             self.activeError = .invalidVivaWalletURL
             return
