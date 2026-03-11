@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) var scenePhase
     @Environment(\.modelContext) var modelContext
     @Query var backendData: [BackendData]
+    @Query var payments: [Payment]
     
     var body: some View {
         VStack{
@@ -42,7 +43,7 @@ struct ContentView: View {
                             session.activeError = .invalidPassword
                         })
                 case .main:
-                    SelectionView(session: session)
+                    SelectionView(session: session, payments: payments)
                 case .tableMap(let nextState):
                     TableMapView(session: session, nextState: nextState)
                 default:
