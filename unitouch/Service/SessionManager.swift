@@ -610,12 +610,11 @@ class SessionManager: ObservableObject {
             case .success(let code, let message):
                 if code == 200 {
                     guard
-                        let balanceDouble = Double(message.trimmingCharacters(in: .whitespacesAndNewlines))
+                        let balance = Decimal(string: message.trimmingCharacters(in: .whitespacesAndNewlines))
                     else {
                         self.activeError = .unknown(err: "Kon bedrag niet ophalen van de server") // MAKE ERROR
                         return
                     }
-                    let balance = Decimal(balanceDouble)
                     TCPClient.shared.sendCommand("GETBILL", type: .download) { response in
                         switch response {
                         case .content(let data):
