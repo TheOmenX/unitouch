@@ -12,7 +12,7 @@ struct unitouchApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .modelContainer(for: BackendData.self)
+                .modelContainer(for: [BackendData.self, Payment.self])
         }
     }
 }

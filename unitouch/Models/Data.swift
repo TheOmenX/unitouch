@@ -11,6 +11,25 @@ import UIKit
 
 
 @Model
+class Payment: Identifiable {
+    var id: UUID;
+    var time: Date;
+    var user: String;
+    var table: String;
+    var amount: Decimal;
+    var tip: Decimal;
+    
+    init(user: String, table: String, amount: Decimal, tip: Decimal) {
+        self.id = UUID()
+        self.time = Date()
+        self.user = user
+        self.table = table
+        self.amount = amount
+        self.tip = tip
+    }
+}
+
+@Model
 class BackendData {
     @Relationship var timestamp: String;
     @Relationship var items: [UnitouchProduct] = []

@@ -19,6 +19,8 @@ struct SelectionView: View {
     
     @State private var tempMoveTable: String? = nil
     
+    var payments: [Payment]
+    
     var body: some View {
         ZStack{
             GeometryReader { geometry in
