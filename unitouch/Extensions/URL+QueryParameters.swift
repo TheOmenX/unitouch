@@ -5,6 +5,7 @@
 //  Created by Tijn Giesberts on 11/03/2026.
 //
 
+import Foundation
 
 extension URL {
   public var queryParameters: [String: String]? {

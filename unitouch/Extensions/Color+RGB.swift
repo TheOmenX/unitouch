@@ -5,6 +5,8 @@
 //  Created by Tijn Giesberts on 11/03/2026.
 //
 
+import SwiftUI
+
 extension Color {
     init(rgbInteger: Int) {
         let red = Double((rgbInteger >> 16) & 0xFF) / 255.0
