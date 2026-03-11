@@ -39,6 +39,7 @@ struct PaymentView: View {
                 let itemSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
                 let buttonHeight = (geometry.size.width - totalSpacing) / CGFloat(4)
                 let textHeight = (geometry.size.width - totalSpacing) / CGFloat(5)
+
                 
                 VStack {
                     Text(bill)
@@ -157,14 +158,26 @@ struct PaymentView: View {
                             height: buttonHeight,
                             disabled: (fooi != 0.0 && fooi < balance),
                             action1: {
-                session.finishPayment(methodId: 1, methodName: "Contant")
+                                session.finishPayment(
+                                    methodId: 1,
+                                    methodName: "Contant",
+                                    modelContext: modelContext,
+                                    amount: balance,
+                                    tip: (fooi == 0 ? balance : fooi - balance)
+                                )
                             })
             SelectionButton(text: "Viva Wallet",
                             width: itemSize,
                             height: buttonHeight,
-                            disabled: (fooi != 0 && fooi < balance),
+                            disabled: (fooi != 0.0 && fooi < balance),
                             action2: {
-                                session.finishPayment(methodId: 97, methodName: "Viva Wallet")
+                                session.finishPayment(
+                                    methodId: 97,
+                                    methodName: "Viva Wallet",
+                                    modelContext: modelContext,
+                                    amount: balance,
+                                    tip: balance - fooi
+                                )
                             }, action1: {
                                 session.vivaPayment(amount: balance, total: fooi)
                             })

@@ -91,7 +91,7 @@ struct ContentView: View {
                     return
                 }
 
-                session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName)
+                session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName, modelContext: modelContext)
             }
         }
     }
