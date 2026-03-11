@@ -9,6 +9,10 @@ import Foundation
 
 extension Decimal {
     public var toCurrency: String {
-        return String(format: "%.2f", NSDecimalNumber(decimal:self).doubleValue )
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: self as NSDecimalNumber) ?? "0.00"
     }
 }
