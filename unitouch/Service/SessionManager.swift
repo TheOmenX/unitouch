@@ -671,7 +671,11 @@ class SessionManager: ObservableObject {
                     )
                     
                     modelContext.insert(payment)
-                    try? modelContext.save()
+                   do {
+                        try modelContext.save()   
+                   } catch {
+                       print("⚠️ Failed to save payment: \(error)")
+                   }
                 } else {
                     self.activeError = .unknown(err: "Onverwachte response bij afronden betaling: \(code) \(message)")
                 }
@@ -737,7 +741,11 @@ class SessionManager: ObservableObject {
                                         tip: Decimal(tipAmount)
                                     )
                                     modelContext.insert(payment)
-                                    try? modelContext.save()
+                                    do {
+                                        try modelContext.save()
+                                    } catch {
+                                        print("⚠️ Failed to save payment: \(error)")
+                                    }
                                 } else {
                                     self.activeError = .vivaPaymentProcessingError(message: message)
                                 }

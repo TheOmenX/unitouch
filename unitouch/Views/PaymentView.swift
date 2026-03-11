@@ -163,7 +163,7 @@ struct PaymentView: View {
                                     methodName: "Contant",
                                     modelContext: modelContext,
                                     amount: balance,
-                                    tip: (fooi == 0 ? balance : fooi - balance)
+                                    tip: (fooi == 0 ? Decimal(0) : fooi - balance)
                                 )
                             })
             SelectionButton(text: "Viva Wallet",
@@ -176,7 +176,7 @@ struct PaymentView: View {
                                     methodName: "Viva Wallet",
                                     modelContext: modelContext,
                                     amount: balance,
-                                    tip: balance - fooi
+                                    tip: (fooi == 0 ? Decimal(0) : fooi - balance)
                                 )
                             }, action1: {
                                 session.vivaPayment(amount: balance, total: fooi)
