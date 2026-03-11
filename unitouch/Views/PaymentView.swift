@@ -12,13 +12,15 @@ import Combine
 struct PaymentView: View {
     @ObservedObject var session: SessionManager
     
-    var balance: Double
+    @Environment(\.modelContext) private var modelContext
+    
+    var balance: Decimal
     var bill: String
     
     @State private var fooiInput: String = ""
     
-    private var fooi: Double {
-        if let fooi = Double(fooiInput) {
+    private var fooi: Decimal {
+        if let fooi = Decimal(string: fooiInput) {
             return fooi/100
         }else {
             return 0.00
@@ -52,7 +54,7 @@ struct PaymentView: View {
                                 .bold()
                                 .frame(maxWidth: itemSize, maxHeight: textHeight)
                             
-                            Text(String(format: "%.2f", self.balance ) ) // TODO: backendManager.balance
+                            Text(self.balance.toCurrency)
                                 .font(.largeTitle)
                                 .padding()
                                 .frame(width: itemSize * 2)
@@ -70,7 +72,7 @@ struct PaymentView: View {
                             // Display the current input as a currency format
                             
                             ZStack{
-                                Text(String(format: "%.2f", self.fooi))
+                                Text(self.fooi.toCurrency)
                                     .font(.largeTitle)
                                     .padding()
                                     .frame(width: (itemSize*2)-8)
@@ -117,7 +119,7 @@ struct PaymentView: View {
                                 .bold()
                                 .frame(width: itemSize)
                                 .frame(maxHeight: textHeight)
-                            Text( String(format: "%.2f", (fooi != 0 ? fooi : balance) ) ) // TODO: backendManager.balance
+                            Text((fooi != 0 ? fooi : balance).toCurrency)
                                 .font(.largeTitle)
                                 .padding()
                                 .frame(width: itemSize * 2)
@@ -153,7 +155,7 @@ struct PaymentView: View {
             SelectionButton(text: "Contant",
                             width: itemSize,
                             height: buttonHeight,
-                            disabled: (fooi != 0 && fooi < balance),
+                            disabled: (fooi != 0.0 && fooi < balance),
                             action1: {
                 session.finishPayment(methodId: 1, methodName: "Contant")
                             })
