@@ -12,7 +12,8 @@ struct unitouchApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .modelContainer(for: [BackendData.self, Payment.self])
+                .modelContainer(for: Payment.self)
+                .environment(\.font, .custom("Roboto-Regular", size: 16))
         }
     }
 }

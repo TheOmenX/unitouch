@@ -35,7 +35,21 @@ ACCPAY <? 1> table
 ##ACCPUT
 ACCPUT
 
-    
+
+###Overzicht tafels
+PLSTOPEN 1
+
+## Billing
+
+###Betaalde rekening ophalen
+GETBILLREF <billId>
+
+###Betaalde rekening printen
+PRINTBILLREF <billId>
+
+###Huidige rekening printen
+ACCPRINT RepBillSmall
+
 
 
 ##Viva Payments

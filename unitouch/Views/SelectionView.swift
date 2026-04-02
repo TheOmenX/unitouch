@@ -31,114 +31,115 @@ struct SelectionView: View {
         
         
     var selectionView: some View {
-        ZStack{
-            GeometryReader { geometry in
-                let columns = 4
-                let spacing: CGFloat = 8
-                let totalSpacing = spacing * CGFloat(columns - 1)
-                let itemSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
+        VStack{
+            Text("CURRENT SELECTION")
+                .font(.custom("Roboto-Regular", size: 16))
+                .foregroundStyle(Color.background[100])
+                .padding(.top, 8)
+            Text(tableNum.rawTable.isEmpty ? "\u{00A0}" : tableNum.rawTable)
+                .padding(.vertical, 30)
+                .font(.custom("Roboto-BoldItalic", size: 76))
+            
+            Divider()
+                .background(Color.background[400])
+                            
+            InputKeypad(
+                input: Binding(
+                    get: { tableNum.rawTable },
+                    set: { tableNum.rawTable = $0 }
+                ),
+                inputValidation: { input in
+                    return TableInfo.validTableInput(tableString: input)
+                }
+            ).padding(.vertical, 20)
+                   
+            
+            if session.currentTable == nil {
+                Button(action: {
+                    Task {
+                        if(session.currentTable != nil){
+                            if session.currentTableItems.count > 0 {
+                                session.checkSubTable(table: tableNum, nextState: .splitTable)
+                            } else {
+                                session.checkSubTable(table: tableNum, nextState: .moveTable)
+                            }
+                        }else{
+                            if tableNum.table != 0 {
+                                session.checkSubTable(table: tableNum, nextState: .openTable)
+                            }else {
+                                session.startTableMap(nextState: .openTable)
+                            }
+                        }
+                        tableNum.rawTable = ""
+                    }
+                }) {
+                    HStack(alignment: .center){
+                        Image(systemName: "pencil.and.list.clipboard")
+                        Text("Open Table")
+                            .font(.custom("Roboto-Bold", size: 24))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+                    .background(Color.primary[500] )
+                    .foregroundColor(Color.background[1000])
+                    .cornerRadius(12)
+                    .shadow(color: Color.primary[500].opacity(0.2), radius: 5, x: 0, y: 0)
+                }
                 
-                VStack(alignment: .trailing) {
-                    HStack(alignment: .bottom){
-                        if(session.currentTable != nil) {
-                            Text("Verplaats naar")
-                                .font(.caption)
+                HStack {
+                    Button(action: {
+                        if tableNum.table != 0 {
+                            session.startPayment(table: tableNum)
+                        } else {
+                            session.startTableMap(nextState: .payTable)
                         }
-                        
-                        ZStack {
-                            Text(tableNum.rawTable)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .foregroundColor(.black)
-                                .font(.title2)
+                    }) {
+                        HStack{
+                            Image(systemName: "eurosign")
+                            Text("Pay")
+                                .font(.custom("Roboto-Bold", size: 24))
+                            
                         }
-                        .frame(maxWidth: itemSize*3+spacing*2, minHeight: itemSize, maxHeight: itemSize)
-                        .background(Color.white)
-                        .cornerRadius(8)
-                        .shadow(radius: 2)
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.background[700], lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.trailing, 8)
                     }
                     
-                    
-                    Grid(horizontalSpacing: spacing, verticalSpacing: spacing) {
-                        GridRow {
-                            SelectionButton(text: "Tafel", size: itemSize, action1:  {
-                                Task {
-                                    if(session.currentTable != nil){
-                                        if session.currentTableItems.count > 0 {
-                                            session.checkSubTable(table: tableNum, nextState: .splitTable)
-                                        } else {
-                                            session.checkSubTable(table: tableNum, nextState: .moveTable)
-                                        }
-                                    }else{
-                                        print(tableNum.rawTable)
-                                        if tableNum.table != 0 {
-                                            session.checkSubTable(table: tableNum, nextState: .openTable)
-                                        }else {
-                                            session.startTableMap(nextState: .openTable)
-                                        }
-                                    }
-                                    tableNum.rawTable = ""
-                                }
-                            })
-                            SelectionButton(text: "7", size: itemSize, action1: 
-                                                {addTableNum("7")})
-                            SelectionButton(text: "8", size: itemSize, action1: 
-                                                {addTableNum("8")})
-                            SelectionButton(text: "9", size: itemSize, action1: 
-                                                {addTableNum("9")})
-                        }
-                        GridRow {
-                            SelectionButton(text: "", size: itemSize)
-                            SelectionButton(text: "4", size: itemSize, action1: 
-                                                {addTableNum("4")})
-                            SelectionButton(text: "5", size: itemSize, action1: 
-                                                {addTableNum("5")})
-                            SelectionButton(text: "6", size: itemSize, action1: 
-                                                {addTableNum("6")})
-                        }
-                        GridRow {
-                            SelectionButton(text: (session.currentTable == nil) ? "Betalen" :  "", size: itemSize, action1: {
-                                if tableNum.table != 0 {
-                                    session.startPayment(table: tableNum)
-                                } else {
-                                    session.startTableMap(nextState: .payTable)
-                                }
-                            })
-                            SelectionButton(text: "1", size: itemSize, action1:
-                                                {addTableNum("1")})
-                            SelectionButton(text: "2", size: itemSize, action1: 
-                                                {addTableNum("2")})
-                            SelectionButton(text: "3", size: itemSize, action1: 
-                                                {addTableNum("3")})
-                        }
-                        GridRow {
-                            SelectionButton(text: (session.currentTable == nil) ? "Verpl." : "", size: itemSize, action1: {
-                                session.checkSubTable(table: tableNum, nextState: .moveTable)
-                                tableNum.rawTable = ""
-                            })
-                            SelectionButton(text: "0", size: itemSize, action1: 
-                                                {addTableNum("0")})
-                            SelectionButton(text: ".", size: itemSize, action1: 
-                                                {addTableNum(".")})
-                            SelectionButton(text: "CL", size: itemSize, action1: 
-                                                {tableNum.rawTable = ""})
-                        }
-                        Spacer()
+                    Button(action: {
+                        session.checkSubTable(table: tableNum, nextState: .moveTable)
+                        tableNum.rawTable = ""
+                    }) {
                         HStack{
-                            SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {
-                                if session.currentTable == nil {
-                                    session.logout()
-                                }else {
-                                    session.closeTable()
-                                    tableNum.rawTable = ""
-                                }
-                            })
-                            SelectionButton(text: "", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                            SelectionButton(text: "", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
+                            Image(systemName: "arrow.right.arrow.left")
+                            Text("Move")
+                                .font(.custom("Roboto-Bold", size: 24))
+                            
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.background[700], lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.leading, 8)
                     }
                 }
+            } else {
+                
             }
+            
         }
+        .padding()
     }
     
     

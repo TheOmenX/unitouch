@@ -12,7 +12,6 @@ struct ContentView: View {
     @StateObject var session = SessionManager()
     @Environment(\.scenePhase) var scenePhase
     @Environment(\.modelContext) var modelContext
-    @Query var backendData: [BackendData]
     @Query var payments: [Payment]
     
     var body: some View {
@@ -39,6 +38,7 @@ struct ContentView: View {
                         users: session.backendData.users,
                         onSelect: { user in
                             session.setUsers(user: user)
+                            DataManager.shared.save(user, forKey: "recentUser" )
                         }, onFail: {
                             session.activeError = .invalidPassword
                         })
@@ -51,6 +51,8 @@ struct ContentView: View {
                 }
             }
         }
+        .background(Color.background[900])
+        .ignoresSafeArea(edges: .bottom)
         .alert(item: $session.activeError) { errorInfo in
             Alert(
                 title: Text("Er ging iets mis"),
@@ -59,10 +61,9 @@ struct ContentView: View {
             )
         }
         .task {
-            await session.verifyData(modelContext: modelContext, backendData: backendData.first ?? BackendData())
+            await session.verifyData()
         }
         .onOpenURL {url in
-            print(url.absoluteString)
             guard
                 url.host() == "result",
                 let params = url.queryParameters,
@@ -90,7 +91,15 @@ struct ContentView: View {
                 else {
                     return
                 }
-
+                
+                if let currentUser = session.currentUser {
+                    session.setUsers(user: currentUser, setState: false)
+                }else {
+                    let recentUser = DataManager.shared.load(forKey: "recentUser", as: UnitouchUser.self)
+                    if let recentUser = recentUser {
+                        session.setUsers(user: recentUser, setState: false)
+                    }
+                }
                 session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName, modelContext: modelContext)
             }
         }
