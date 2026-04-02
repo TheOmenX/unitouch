@@ -13,6 +13,10 @@ fileprivate struct LookupItems: Identifiable {
     var items: [UnitouchProduct]
 }
 
+enum TableTab {
+    case selection, overview, functions
+}
+
 
 struct TableView: View {
     
@@ -32,100 +36,118 @@ struct TableView: View {
     @State private var textItemIndex: Int = -1;
     @State private var message: String = ""
     
+    @State private var activeTab = TableTab.selection
+    
     var body: some View {
-        VStack{
-            ZStack {
-                Text("Account - Tafel \(session.currentTable?.formatTableRaw ?? "-")")
+        VStack(spacing:0){
+            Text("Tafel \(session.currentTable?.formatTableRaw ?? "-")")
+                .padding(2)
+                .font(.custom("Roboto-Bold", size: 18))
+                .foregroundStyle(Color.primary[500])
+                .frame(maxWidth: .infinity)
+                .background(Color.background[800])
+                
+            Divider()
+                .frame(maxWidth: .infinity)
+                .background(Color.background[700])
+            TabView(selection: $activeTab){
+                selectionView.tag(TableTab.selection)
+                overviewView.tag(TableTab.overview)
+                functionsView.tag(TableTab.functions)
             }
-            .frame(maxWidth: .infinity)
-            .background(Color.gray)
-            TabView{
-                selectionView
-                overviewView
-                functionsView
-            }
-            .tabViewStyle(.page)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea(edges: .bottom)
         }
     }
     
     var selectionView: some View {
-        VStack{
-            HStack{
-                categoryBar
+        VStack(spacing: 0){
+            HStack(spacing: 0){
+                CategoryBarView(categories: session.backendData.categories, selectedId: $selectedId)
+                Divider()
+                    .frame(maxHeight: .infinity)
+                    .foregroundStyle(Color.background[700])
                 itemBar
             }
-            ZStack {
-                ZStack {
-                    GeometryReader { geometry in
-                        let columns = 4
-                        let spacing: CGFloat = 8
-                        let totalSpacing = spacing * CGFloat(columns - 1)
-                        let calculatedSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
-                        
-                        Color.clear
-                            .onAppear {
-                                itemSize = calculatedSize
+            Rectangle()
+                .fill(Color.background[500])
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+                .ignoresSafeArea(edges: .bottom)
+            VStack{
+                HStack {
+                    Button(action: { Task {
+                        activeTab = TableTab.overview
+                    } }) {
+                        ZStack {
+                            if (!newItems.isEmpty && newItems.last?.plu != 1999){
+                                HStack{
+                                    Text(newItems.last?.name ?? "\u{00A0}")
+                                        .foregroundColor(.white)
+                                        .font(.custom("Robot-Bold", size: 24))
+                                    Spacer()
+                                    Text("\(newItems.last?.quantity ?? 0)x")
+                                        .foregroundColor(.white)
+                                        .font(.custom("Roboto-Bold", size: 16))
+                                }
+                            }else {
+                                Text("\u{00A0}")
+                                    .foregroundColor(.black)
+                                    .font(.title2)
                             }
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, maxHeight: 64)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.primary[500].opacity(0.3), lineWidth: 4)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 16))
+                        .cornerRadius(16)
                     }
-                    .frame(height: 0) // Prevent it from taking visible space
                     
-                    HStack {
-                        Button(action: { Task {
-                            session.finishTable(newItems: newItems, deletedItems: deletedItems)
-                        } }) {
-                            ZStack {
-                                if (!newItems.isEmpty && newItems.last?.plu != 1999){
-                                    HStack{
-                                        Text("\(newItems.last?.quantity ?? 0)")
-                                            .frame(maxWidth: 40, maxHeight: .infinity)
-                                            .foregroundColor(.black)
-                                            .font(.title2)
-                                            .bold()
-                                        Text(newItems.last?.name ?? "Einde")
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                            .foregroundColor(.black)
-                                            .font(.title2)
-                                    }
-                                }else {
-                                    Text("Einde")
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                        .foregroundColor(.black)
-                                        .font(.title2)
-                                }
+                    Button(action: {
+                        if let last = newItems.last, last.plu != 1999 {
+                            newItems.removeLast()
+                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == last.plu}) {
+                                session.blockedItems[idx].count += last.quantity
+                                session.addBlockedItem(plu: last.plu, count: last.quantity)
+                                
                             }
-                            .frame(width: itemSize * 3, height: itemSize)
-                            .background(Color.white)
-                            .cornerRadius(8)
-                            .shadow(radius: 2)
                         }
-                        
-                        Button(action: {
-                            if let last = newItems.last, last.plu != 1999 {
-                                newItems.removeLast()
-                                if let idx = session.blockedItems.firstIndex(where: {$0.plu == last.plu}) {
-                                    session.blockedItems[idx].count += last.quantity
-                                    session.addBlockedItem(plu: last.plu, count: last.quantity)
-                                    
-                                }
-                            }
-                        }) {
-                            ZStack {
-                                Image(systemName: "x.square.fill")
-                                    .foregroundStyle(Color.black, Color.white)
-                                    .font(.system(size: 70))
-                            }
-                            .frame(width: itemSize, height: itemSize)
-                            .background(Color.white)
-                            .cornerRadius(8)
-                            .shadow(radius: 2)
+                    }) {
+                        ZStack {
+                            Image(systemName: "x.square.fill")
+                                .foregroundStyle(Color.white, Color.danger[500])
+                                .font(.system(size: 70))
                         }
+                        .frame(width: 64, height: 64)
+                        .cornerRadius(16)
                     }
                 }
+                
+                Button(action: {
+                    session.finishTable(newItems: newItems, deletedItems: deletedItems)
+                }) {
+                    Text("EINDE BESTELLING")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                        .background(Color.primary[500])
+                        .foregroundColor(.black)
+                        .cornerRadius(15)
+                        .font(.custom("Roboto-Bold", size: 20))
+                        .shadow(color: Color.primary[500].opacity(0.5), radius: 5, x: 0, y: 0)
+                }
             }
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(Color.background[700])
+            .ignoresSafeArea(edges: .bottom)
+            
         }
+        .ignoresSafeArea(edges: .bottom)
         .sheet(item: $lookupItems) { data in
             VStack {
-                
                 List(
                     data.items
                         .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 }),
@@ -148,62 +170,63 @@ struct TableView: View {
         }
     }
     
-    var categoryBar: some View {
-        VStack {
-            List(session.backendData.categories.sorted {$0.id < $1.id}, id: \.self) { category in
-                HStack{
-                    Text(category.name)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
-                .contentShape(Rectangle())
-                .listRowBackground(selectedId == category.id ? Color.orange : Color.clear)
-                .onTapGesture {
-                    selectedId = category.id
-                    print("Selected ID: \(selectedId)")
-                }
-            }
-            .listStyle(.plain)
-            
-        }
-    }
-    
     var itemBar: some View{
-        VStack {
-            List(
-                session.backendData.items
-                    .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 })
-                    .filter { (it: UnitouchProduct) in it.page == selectedId },
-                id: \.self
-            ) { item in
-                HStack{
-                    Text(item.name)
-                        .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
-                        .contentShape(Rectangle())
-                        .padding(.vertical, 8)
-                        .listRowInsets(EdgeInsets())
-                        .onTapGesture {
-                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-                                if session.blockedItems[idx].count > 0 {
-                                    session.blockedItems[idx].count -= 1
-                                    session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
-                                        createNewItem(item: item)
-                                    }
-                                }else {
-                                    session.activeError = .itemBlocked
+        ScrollView{
+            VStack{
+                ForEach(
+                    session.backendData.items
+                        .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 })
+                        .filter { (it: UnitouchProduct) in it.page == selectedId },
+                    id: \.self
+                ) { item in
+                    let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
+                    Button(action: {
+                        if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+                            if session.blockedItems[idx].count > 0 {
+                                session.blockedItems[idx].count -= 1
+                                session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
+                                    createNewItem(item: item)
                                 }
-                            }
-                            else {
-                                createNewItem(item: item)
+                            }else {
+                                session.activeError = .itemBlocked
                             }
                         }
-                    if let blocked = session.blockedItems.first(where: {$0.plu == item.plu}) {
-                        Text(String(blocked.count))
-                            .font(.caption)
+                        else {
+                            createNewItem(item: item)
+                        }
+                    }) {
+                        HStack{
+                            Text(item.name)
+                                .font(.custom("Roboto-Bold", size: 20))
+                                .opacity(blockedCount == 0 ? 0.4 : 1)
+                            Spacer()
+                            Text("€" + Decimal(item.price).toCurrency)
+                                .font(.custom("Roboto-Bold", size: 14))
+                                .foregroundStyle(Color.primary[500])
+                                .opacity(blockedCount == 0 ? 0.4 : 1)
+                            if blockedCount >= 0 {
+                                Image(systemName: "\(blockedCount).circle.fill")
+                                    .foregroundStyle(Color.danger[500], Color.danger[500].opacity(0.1))
+                                    .font(.system(size: 18))
+                                
+                            }else {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(Color.primary[500], Color.primary[500].opacity(0.1))
+                                    .font(.system(size: 18))
+                            }
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .background(Color.background[700])
+                        .opacity(blockedCount == 0 ? 0.4 : 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(RoundedRectangle(cornerRadius: 10))
+                        .cornerRadius(10)
                     }
                 }
             }
-            .listStyle(.plain)
         }
+        .padding(.horizontal, 8)
     }
     
     func createNewItem(item: UnitouchProduct){
@@ -234,130 +257,121 @@ struct TableView: View {
     }
     
     var overviewView: some View {
-        ZStack{
-            GeometryReader { geometry in
-                let columns = 8
-                let spacing: CGFloat = 1
-                let totalSpacing = spacing * CGFloat(columns - 1)
-                let itemSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
-                VStack{
-                    List {
-                        HStack {
-                            Text("Status")
+        VStack{
+            
+            
+            List {
+                HStack {
+                    Text("Status")
+                        .frame(width: itemSize)
+                        .font(.caption)
+                    Text("Qty")
+                        .frame(width: itemSize)
+                        .font(.caption)
+                    Text("Omschrijving")
+                        .frame(width: itemSize*6)
+                        .font(.caption)
+                }
+                ForEach((session.currentTableItems + newItems), id: \.self) { item in
+                    HStack {
+                        if(newItems.contains(item)) {
+                            Image(systemName: "plus")
+                                .foregroundStyle(Color.gray)
                                 .frame(width: itemSize)
-                                .font(.caption)
-                            Text("Qty")
+                        }else if (deletedItems.contains(item)){
+                            Image(systemName: "x.square.fill")
+                                .foregroundStyle(Color.red, Color.black)
                                 .frame(width: itemSize)
-                                .font(.caption)
-                            Text("Omschrijving")
-                                .frame(width: itemSize*6)
-                                .font(.caption)
+                                .font(.system(size:itemSize*0.6))
+                        }else {
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(Color.orange)
+                                .frame(width: itemSize)
                         }
-                        ForEach((session.currentTableItems + newItems), id: \.self) { item in
-                            HStack {
-                                if(newItems.contains(item)) {
-                                    Image(systemName: "plus")
-                                        .foregroundStyle(Color.gray)
-                                        .frame(width: itemSize)
-                                }else if (deletedItems.contains(item)){
-                                    Image(systemName: "x.square.fill")
-                                        .foregroundStyle(Color.red, Color.black)
-                                        .frame(width: itemSize)
-                                        .font(.system(size:itemSize*0.6))
-                                }else {
-                                    Image(systemName: "circle.fill")
-                                        .foregroundStyle(Color.orange)
-                                        .frame(width: itemSize)
-                                }
-                                
-                                
-                                Text("\(item.quantity)")
-                                    .frame(width: itemSize)
-                                Text(item.name)
-                                    .frame(width: itemSize*6, alignment: .leading)
-                                    .font(item.comment ? .caption : .body )
-                                
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                clickedItem = item
-                            }
-                        }
+                        
+                        
+                        Text("\(item.quantity)")
+                            .frame(width: itemSize)
+                        Text(item.name)
+                            .frame(width: itemSize*6, alignment: .leading)
+                            .font(item.comment ? .caption : .body )
+                        
                     }
-                    .listStyle(.plain)
-                    .sheet(item: $clickedItem) { item in
-                        VStack {
-                            Text("Selected item:")
-                            Text(item.name)
-                                .font(.title)
-                                .padding()
-                            
-                            HStack(){
-                                SelectionButton(text: "Tekst", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {
-                                    textItemIndex = (newItems.firstIndex(of: item) ?? -2)
-                                    if(textItemIndex > -1) {addTextAlert = true}
-                                })
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            HStack{
-                                SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil} )
-                                SelectionButton(text: "Verwijder", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1:
-                                {
-                                    if(newItems.contains(item)){
-                                        var start = -1;
-                                        var end = -1
-                                        for i in 0...(newItems.count-1) {
-                                            if (newItems[i] == item){
-                                                start = i
-                                                end = i+1
-                                            }else if (start != -1){
-                                                if (newItems[i].comment){
-                                                    end = i+1
-                                                }else{
-                                                    break
-                                                }
-                                            }
-                                        }
-                                        if(start != -1) {
-                                            newItems.removeSubrange(start..<end)
-                                            clickedItem = nil
-                                        }
-                                    }else{
-                                        var found = false
-                                        for el in session.currentTableItems {
-                                            if (el == item){
-                                                deletedItems.append(el)
-                                                found = !el.comment
-                                            }else if (found){
-                                                if (el.comment){
-                                                    deletedItems.append(el)
-                                                }else{
-                                                    break
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-                                        session.blockedItems[idx].count += item.quantity
-                                        session.addBlockedItem(plu: item.plu, count: item.quantity)
-                                    }
-                                    
-                                    clickedItem = nil
-                                })
-                                SelectionButton(text: "Ok", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil})
-                            }
-                        }
-                    }
-                    Spacer()
-                    HStack{
-                        SelectionButton(text: "Terug", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
-                        SelectionButton(text: "Einde", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: { Task {session.finishTable(newItems: newItems, deletedItems: deletedItems)} })
-                        SelectionButton(text: "Functies", width: geometry.size.width/3-6, height: geometry.size.width/4-6)
+                    .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        clickedItem = item
                     }
                 }
             }
+            .listStyle(.plain)
+        
+            /*
+            .sheet(item: $clickedItem) { item in
+                VStack {
+                    Text("Selected item:")
+                    Text(item.name)
+                        .font(.title)
+                        .padding()
+                    
+                    HStack(){
+                        SelectionButton(text: "Tekst", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {
+                            textItemIndex = (newItems.firstIndex(of: item) ?? -2)
+                            if(textItemIndex > -1) {addTextAlert = true}
+                        })
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    HStack{
+                        SelectionButton(text: "Annuleren", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil} )
+                        SelectionButton(text: "Verwijder", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1:
+                        {
+                            if(newItems.contains(item)){
+                                var start = -1;
+                                var end = -1
+                                for i in 0...(newItems.count-1) {
+                                    if (newItems[i] == item){
+                                        start = i
+                                        end = i+1
+                                    }else if (start != -1){
+                                        if (newItems[i].comment){
+                                            end = i+1
+                                        }else{
+                                            break
+                                        }
+                                    }
+                                }
+                                if(start != -1) {
+                                    newItems.removeSubrange(start..<end)
+                                    clickedItem = nil
+                                }
+                            }else{
+                                var found = false
+                                for el in session.currentTableItems {
+                                    if (el == item){
+                                        deletedItems.append(el)
+                                        found = !el.comment
+                                    }else if (found){
+                                        if (el.comment){
+                                            deletedItems.append(el)
+                                        }else{
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+                                session.blockedItems[idx].count += item.quantity
+                                session.addBlockedItem(plu: item.plu, count: item.quantity)
+                            }
+                            
+                            clickedItem = nil
+                        })
+                        SelectionButton(text: "Ok", width: geometry.size.width/3-6, height: geometry.size.width/4-6, action1: {clickedItem = nil})
+                    }
+                }
+            }
+             */
         }.alert("Geef bericht in", isPresented: $addTextAlert, actions: {
             TextField("Bericht", text: $message)
             Button("Ok", action: {
@@ -389,5 +403,71 @@ struct TableView: View {
     }
 }
 
+/*----------------------------------------------\
+|                                               |
+|                 Categorie Bar                 |
+|                                               |
+\----------------------------------------------*/
 
+struct CategoryBarView: View {
+    var categories: [UnitouchCategory]
+    @Binding var selectedId: Int
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0){
+                ForEach(categories.sorted { $0.id < $1.id }, id: \.self) { category in
+                    categoryContainer(category: category)
+                        .padding(0)
+                    Divider()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.background[700])
+                }
+            }
+        }
+        .frame(maxWidth: 128, alignment: .center)
+        .scrollIndicators(.hidden)
+    }
+
+    func categoryContainer(category: UnitouchCategory) -> some View {
+        HStack{
+            Text(category.name.uppercased())
+                .font(.custom("Roboto-Bold", size: 20))
+                .foregroundStyle(selectedId == category.id ? .black : .white)
+                .padding()
+        }
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+        .background(selectedId == category.id ? Color.primary[500] : Color.background[900])
+        .onTapGesture {
+            selectedId = category.id
+        }
+        
+    }
+}
+
+/*----------------------------------------------\
+|                                               |
+|                   Item Bar                    |
+|                                               |
+\----------------------------------------------*/
+
+#Preview {
+    @Previewable @State var selectedId = 1
+    
+    CategoryBarView(categories: [
+        UnitouchCategory(id: 1, name: "hard lopers"),
+        UnitouchCategory(id: 2, name: "warme dranken"),
+        UnitouchCategory(id: 3, name: "gebak"),
+        UnitouchCategory(id: 4, name: "fris dranken"),
+        UnitouchCategory(id: 5, name: "bieren"),
+        UnitouchCategory(id: 6, name: "wijnen"),
+        UnitouchCategory(id: 7, name: "borrel happen"),
+        UnitouchCategory(id: 8, name: "broodjes"),
+        UnitouchCategory(id: 9, name: "tosti & kids"),
+        UnitouchCategory(id: 10, name: "salades & soepen"),
+        UnitouchCategory(id: 11, name: "ontbijt"),
+        UnitouchCategory(id: 12, name: "alc. dranken"),
+    ], selectedId: $selectedId)
+}
 

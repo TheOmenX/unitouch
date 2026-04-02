@@ -50,7 +50,7 @@ class SessionManager: ObservableObject {
     @Published var activeError: UnitouchError? = nil
     
     // Global Data
-    var backendData: BackendData = BackendData()
+    @Published var backendData: BackendData = BackendData()
     
     // Persistent Memory
     var currentUser: UnitouchUser?
@@ -109,17 +109,21 @@ class SessionManager: ObservableObject {
         }
     }
     
-    func verifyData(modelContext: ModelContext, backendData: BackendData) async {
-        self.backendData = backendData
+    func verifyData() async {
+        self.state = .loading("Checking for updates...")
+        self.backendData = DataManager.shared.load(forKey: "backendData", as: BackendData.self) ?? BackendData()
         TCPClient.shared.sendCommand("DATAGET TIMESTAMP.txt", type: .download) { response in
             switch response{
             case .content(data: let timestamp):
-                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != backendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines) {
+                if timestamp.trimmingCharacters(in: .whitespacesAndNewlines) != self.backendData.timestamp.trimmingCharacters(in: .whitespacesAndNewlines) {
                     Task{
                         print("Timestamp mismatch, updating data...")
                         self.backendData.reset(timestamp)
-                        await self.getData(modelContext: modelContext)
+                        await self.getData()
+                        self.state = .userSelection
                     }
+                } else {
+                    self.state = .userSelection
                 }
             case .error(let error):
                 print("Error: \(error)")
@@ -130,171 +134,168 @@ class SessionManager: ObservableObject {
     }
     
     // MARK: Data Retrieval
-    func getData(modelContext: ModelContext) async {
-        do {
-            // MARK: GET ALL USERS
-            TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
-                switch response {
-                case .content(data: let data):
-                    for line in data.split(separator: "\n") {
-                        if let newUser = UnitouchUser(raw:String(line)) {
-                            self.backendData.users.append(newUser)
-                        }
-                    }
-                case .error(let error):
-                    print("Error: \(error)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            // MARK: GET ALL CATEGORIES
-            TCPClient.shared.sendCommand("DATAGET TYPES.txt", type: .download) { response in
-                switch response {
-                case .content(data: let data):
-                    for line in data.split(separator: "\n") {
-                        if let newCategory = UnitouchCategory(raw:String(line)) {
-                            self.backendData.categories.append(newCategory)
-                        }
-                    }
-                case .error(let error):
-                    print("Error: \(error)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            // MARK: GET ALL ITEMS
-            TCPClient.shared.sendCommand("DATAGET ART.txt", type: .download) { response in
-                switch response {
-                case .content(data: let data):
-                    var temp_cat: [Int] = []
-                    
-                    for line in data.split(separator: "\n") {
-                        if let newProduct = UnitouchProduct(raw:String(line)) {
-                            self.backendData.items.append(newProduct)
-                            
-                            if(!temp_cat.contains(newProduct.page)){
-                                temp_cat.append(newProduct.page)
-                            }
-                        }
-                    }
-                    
-                    for (index, value) in (temp_cat.sorted()).enumerated() {
-                        if index == value {continue}
-                        for (index1, _) in self.backendData.items.enumerated() {
-                            if(self.backendData.items[index1].page == value){
-                                self.backendData.items[index1].page = index
-                            }
-                        }
-                    }
-                    
-                case .error(let error):
-                    print("Error: \(error)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            // MARK: GET ALL LOOKUPS
-            TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) {response in
-                switch response{
-                case .content(data: let data):
-                    for line in data.split(separator: "\n") {
-                        let parts = line.split(separator: "\t")
-                        if let lookup = self.backendData.lookups.first(where: { $0.id == Int(parts[0]) }), let child = Int(parts[1]) {
-                            lookup.items.append(child)
-                        } else {
-                            if let newLookup = UnitouchLookup(raw: String(line)) {
-                                self.backendData.lookups.append(newLookup)
-                            }
-                        }
-                    }
-                case .error(let error):
-                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            // MARK: GET ALL BACKGROUNDS
-            for i in 1...7 {
-                let filename = "288-back0\(i).jpg"
-                // 2. Send command with type .image
-                TCPClient.shared.sendCommand("BINDATAGET \(filename)", type: .image) { response in
-                    switch response {
-                    case .binary(let imageData):
-                        // 3. Convert Data to UIImage
-                        if let _ = UIImage(data: imageData) {
-                            DispatchQueue.main.async {
-                                self.backendData.backgrounds.append(UnitouchBackground(id: i, imageData: imageData))
-                            }
-                        } else {
-                            print("❌ Failed to create UIImage from data")
-                        }
-                        
-                    case .error(let error):
-                        print("❌ Image Fetch Error: \(error.localizedDescription)")
-                        
-                    case .success(let code, let message):
-                        print("⚠️ Unexpected text response: \(code) \(message)")
-                        
-                    case .content(_):
-                        break
+    func getData() async {
+        // MARK: GET ALL USERS
+        TCPClient.shared.sendCommand("DATAGET WAITER.txt", type: .download) { response in
+            switch response {
+            case .content(data: let data):
+                for line in data.split(separator: "\n") {
+                    if let newUser = UnitouchUser(raw:String(line)) {
+                        self.backendData.users.append(newUser)
                     }
                 }
+            case .error(let error):
+                print("Error: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
             }
-            
-            // MARK: GET ALL TABLES
-            TCPClient.shared.sendCommand("DATAGET TBLCELL.txt", type: .download) { response in
-                switch response {
-                case .content(data: let data):
-                    for line in data.split(separator: "\n") {
-                        if let newTable = UnitouchTable(raw: String(line)) {
-                            self.backendData.tables.append(newTable)
-                        }
-                    }
-                case .error(let error):
-                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            // MARK: GET ALL COLORS
-            TCPClient.shared.sendCommand("DATAGET TBLCOLORS.txt", type: .download) { response in
-                switch response {
-                case .content(let data):
-                    let values = data.split(separator: "\t")
-                    
-                    for i in 0...(values.count/2-1) {
-                        guard
-                            let BTNFill = Int(values[i*2]),
-                            let BTNText = Int(values[i*2+1])
-                        else { continue }
-                        
-                        self.backendData.tableColors.append(
-                            UnitouchTableColor(
-                                BTNStatus: i,
-                                BTNFill: BTNFill,
-                                BTNText: BTNText
-                            )
-                        )
-                    }
-                case .error(let error):
-                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
-                default:
-                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
-                }
-            }
-            
-            //MARK: Save to database
-            modelContext.insert(self.backendData)
-            try modelContext.save()
-        } catch {
-            self.activeError = error as? UnitouchError
         }
         
+        // MARK: GET ALL CATEGORIES
+        TCPClient.shared.sendCommand("DATAGET TYPES.txt", type: .download) { response in
+            switch response {
+            case .content(data: let data):
+                for line in data.split(separator: "\n") {
+                    if let newCategory = UnitouchCategory(raw:String(line)) {
+                        self.backendData.categories.append(newCategory)
+                    }
+                }
+            case .error(let error):
+                print("Error: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+            }
+        }
+        
+        // MARK: GET ALL ITEMS
+        TCPClient.shared.sendCommand("DATAGET ART.txt", type: .download) { response in
+            switch response {
+            case .content(data: let data):
+                var temp_cat: [Int] = []
+                
+                for line in data.split(separator: "\n") {
+                    if let newProduct = UnitouchProduct(raw:String(line)) {
+                        self.backendData.items.append(newProduct)
+                        
+                        if(!temp_cat.contains(newProduct.page)){
+                            temp_cat.append(newProduct.page)
+                        }
+                    }
+                }
+                
+                for (index, value) in (temp_cat.sorted()).enumerated() {
+                    if index == value {continue}
+                    for (index1, _) in self.backendData.items.enumerated() {
+                        if(self.backendData.items[index1].page == value){
+                            self.backendData.items[index1].page = index
+                        }
+                    }
+                }
+                
+            case .error(let error):
+                print("Error: \(error)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+            }
+        }
+        
+        // MARK: GET ALL LOOKUPS
+        TCPClient.shared.sendCommand("DATAGET REMARKS.txt", type: .download) {response in
+            switch response{
+            case .content(data: let data):
+                for line in data.split(separator: "\n") {
+                    let parts = line.split(separator: "\t")
+                    if let index = self.backendData.lookups.firstIndex(where: { $0.id == Int(parts[0]) }), let child = Int(parts[1]) {
+                        self.backendData.lookups[index].items.append(child)
+                    } else {
+                        if let newLookup = UnitouchLookup(raw: String(line)) {
+                            self.backendData.lookups.append(newLookup)
+                        }
+                    }
+                }
+            case .error(let error):
+                self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+            }
+        }
+        
+        // MARK: GET ALL BACKGROUNDS
+        for i in 1...7 {
+            let filename = "288-back0\(i).jpg"
+            // 2. Send command with type .image
+            TCPClient.shared.sendCommand("BINDATAGET \(filename)", type: .image) { response in
+                switch response {
+                case .binary(let imageData):
+                    // 3. Convert Data to UIImage
+                    if let _ = UIImage(data: imageData) {
+                        DispatchQueue.main.async {
+                            self.backendData.backgrounds.append(UnitouchBackground(id: i, imageData: imageData))
+                        }
+                    } else {
+                        print("❌ Failed to create UIImage from data")
+                    }
+                    
+                case .error(let error):
+                    print("❌ Image Fetch Error: \(error.localizedDescription)")
+                    
+                case .success(let code, let message):
+                    print("⚠️ Unexpected text response: \(code) \(message)")
+                    
+                case .content(_):
+                    break
+                }
+            }
+        }
+        
+        // MARK: GET ALL TABLES
+        TCPClient.shared.sendCommand("DATAGET TBLCELL.txt", type: .download) { response in
+            switch response {
+            case .content(data: let data):
+                for line in data.split(separator: "\n") {
+                    if let newTable = UnitouchTable(raw: String(line)) {
+                        self.backendData.tables.append(newTable)
+                    }
+                }
+            case .error(let error):
+                self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+            }
+        }
+        
+        // MARK: GET ALL COLORS
+        TCPClient.shared.sendCommand("DATAGET TBLCOLORS.txt", type: .download) { response in
+            switch response {
+            case .content(let data):
+                let values = data.split(separator: "\t")
+                
+                for i in 0...(values.count/2-1) {
+                    guard
+                        let BTNFill = Int(values[i*2]),
+                        let BTNText = Int(values[i*2+1])
+                    else { continue }
+                    
+                    self.backendData.tableColors.append(
+                        UnitouchTableColor(
+                            BTNStatus: i,
+                            BTNFill: BTNFill,
+                            BTNText: BTNText
+                        )
+                    )
+                }
+            case .error(let error):
+                self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+            default:
+                self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+            }
+        }
+        
+        //MARK: Save to database
+        TCPClient.shared.sendCommand("TEST", type: .download) { _ in
+            DataManager.shared.save(self.backendData, forKey: "backendData")
+        }
+
     }
     
     // SETUSR

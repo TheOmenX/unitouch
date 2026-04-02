@@ -29,22 +29,21 @@ class Payment: Identifiable {
     }
 }
 
-@Model
-class BackendData {
-    @Relationship var timestamp: String;
-    @Relationship var items: [UnitouchProduct] = []
-    @Relationship var categories: [UnitouchCategory] = []
-    @Relationship var users: [UnitouchUser] = []
-    @Relationship var lookups: [UnitouchLookup] = []
-    @Relationship var backgrounds: [UnitouchBackground] = []
-    @Relationship var tables: [UnitouchTable] = []
-    @Relationship var tableColors: [UnitouchTableColor] = []
+struct BackendData: Codable {
+    var timestamp: String
+    var items: [UnitouchProduct] = []
+    var categories: [UnitouchCategory] = []
+    var users: [UnitouchUser] = []
+    var lookups: [UnitouchLookup] = []
+    var backgrounds: [UnitouchBackground] = []
+    var tables: [UnitouchTable] = []
+    var tableColors: [UnitouchTableColor] = []
 
     init() {
         self.timestamp = UUID().uuidString
     }
     
-    func reset(_ timestamp: String) {
+    mutating func reset(_ timestamp: String) {
         self.timestamp = timestamp
         self.items.removeAll()
         self.categories.removeAll()
@@ -56,8 +55,7 @@ class BackendData {
     }
 }
 
-@Model
-class UnitouchProduct {
+struct UnitouchProduct: Codable, Hashable {
     var plu: Int
     var name: String
     var page: Int
@@ -110,8 +108,7 @@ class UnitouchProduct {
     }
 }
 
-@Model
-class UnitouchCategory {
+struct UnitouchCategory: Codable, Hashable {
     var id: Int
     var name: String
 
@@ -135,8 +132,7 @@ class UnitouchCategory {
     }
 }
 
-@Model
-class UnitouchUser {
+struct UnitouchUser: Codable, Hashable {
     var id: Int
     var name: String
     var password: String
@@ -164,8 +160,7 @@ class UnitouchUser {
     }
 }
 
-@Model
-class UnitouchLookup {
+struct UnitouchLookup: Codable {
     var id: Int
     var items: [Int]
     
@@ -188,8 +183,7 @@ class UnitouchLookup {
     }
 }
 
-@Model
-class UnitouchBackground {
+struct UnitouchBackground: Codable {
     var id: Int
     var imageData: Data
     
@@ -204,8 +198,7 @@ class UnitouchBackground {
     }
 }
 
-@Model
-class UnitouchTable {
+struct UnitouchTable: Codable, Hashable, Identifiable {
     var id = UUID()
     var BTNfrmCnt: Int
     var BTNcllCnt: Int
@@ -258,8 +251,7 @@ class UnitouchTable {
     }
 }
 
-@Model
-class UnitouchTableColor {
+struct UnitouchTableColor: Codable {
     var id = UUID()
     var BTNStatus: Int
     var BTNFill: Int
@@ -325,10 +317,10 @@ struct NewItem: Hashable, Identifiable {
         self.splitMove = splitMove
         self.listPlace = listPlace
     }
-    
+
     init?(raw: String) {
         let parts = raw.components(separatedBy: "\t")
-        
+
         guard
             parts.count >= 10,
             let user = Int(parts[0]),
@@ -340,8 +332,8 @@ struct NewItem: Hashable, Identifiable {
         let priceStr = parts[6]
         let priceCents: Int?
         if priceStr.contains(".") {
-            if let d = Double(priceStr) {
-                priceCents = Int(round(d * 100))
+            if let priceDouble = Double(priceStr) {
+                priceCents = Int(round(priceDouble * 100))
             } else {
                 return nil
             }
@@ -350,10 +342,9 @@ struct NewItem: Hashable, Identifiable {
         } else {
             return nil
         }
-        
+
         guard let price = priceCents else { return nil }
 
-        
         self.user = user
         self.plu = plu
         self.name = parts[2]
@@ -420,7 +411,7 @@ struct TableInfo: Equatable {
         }
     }
     var subTable: Int {
-        if rawTable.contains(".") {
+        if rawTable.contains(".") && rawTable.split(separator: ".").count > 1 {
             return Int(rawTable.split(separator: ".")[1]) ?? 0
         } else {
             return 0
@@ -441,6 +432,16 @@ struct TableInfo: Equatable {
     
     mutating func setSubTable(_ subTable: Int) {
         self.rawTable = "\(table).\(subTable)"
+    }
+    
+    static func validTable(tableString: String) -> Bool {
+        let pattern = #"^\d+(\.\d+)?$"#
+        return tableString.range(of: pattern, options: .regularExpression) != nil
+    }
+    
+    static func validTableInput(tableString: String) -> Bool {
+        let pattern = #"^\d{,4}((\.\d)?|\.)$"#
+        return tableString.range(of: pattern, options: .regularExpression) != nil
     }
     
 }
