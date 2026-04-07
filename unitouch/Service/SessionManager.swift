@@ -217,6 +217,38 @@ class SessionManager: ObservableObject {
                 }
             }
             
+            //MARK: GET ALL MENUS
+            TCPClient.shared.sendCommand("DATAGET MENU.txt", type: .download) {response in
+                switch response{
+                case .content(data: let data):
+                    for line in data.split(separator: "\n") {
+                        let parts = line.split(separator: "\t")
+                        if parts.count < 1 || parts[0] == "0" { continue }
+                        guard let item = Int(parts[0]), let stepId = Int(parts[1]) else { continue }
+                        
+                        var i = 3
+                        var steps: [Int:[Int]] = [stepId:[]]
+                        while parts[i] != "1" {
+                            guard let stepItem = Int(parts[i]) else { i += 1; continue }
+                            steps[stepId]?.append(stepItem)
+                            i += 1
+                        }
+                        
+                        if parts[1] == "1" {
+                            self.backendData.menus.append(UnitouchMenu(item: item, steps: steps))
+                        } else {
+                            guard let index = self.backendData.menus.firstIndex(where: { $0.item == item }) else { continue }
+                            self.backendData.menus[index].steps[stepId] = steps[stepId]
+                        }
+                    }
+                    print(self.backendData.menus)
+                case .error(let error):
+                    self.activeError = .unknown(err: "Error: '\(error.localizedDescription)")
+                default:
+                    self.activeError = .unknown(err: "Onverwachte response bij controleren timestamp")
+                }
+            }
+            
             // MARK: GET ALL BACKGROUNDS
             for i in 1...7 {
                 let filename = "288-back0\(i).jpg"

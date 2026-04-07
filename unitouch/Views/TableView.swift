@@ -23,6 +23,11 @@ struct TableView: View {
     
     @State private var lookupItems: LookupItems? = nil
     
+    
+    @State private var menu: UnitouchMenu? = nil
+    @State private var selectedStep: Int = 1
+    @State private var selectedChoices: [Int: UnitouchProduct] = [:]
+    
     @State private var selectedId: Int = 1
     @State private var itemSize: CGFloat = 0
     
@@ -125,7 +130,6 @@ struct TableView: View {
         }
         .sheet(item: $lookupItems) { data in
             VStack {
-                
                 List(
                     data.items
                         .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 }),
@@ -144,6 +148,42 @@ struct TableView: View {
                 }
                 .listStyle(.plain)
                 .padding(.top, 24)
+            }
+        }
+        .sheet(item: $menu) { data in
+            HStack {
+                VStack {
+                    List(data.steps.sorted(by: { $0.key < $1.key }), id: \.key) { item in
+                        Text("Rang \(item.key)")
+                            .background(selectedStep == item.key ? Color.orange : Color.clear)
+                            .onTapGesture {
+                                selectedStep = item.key
+                            }
+                    }
+                }
+                VStack {
+                    List(data.steps[selectedStep]?.sorted() ?? [], id: \.self) { plu in
+                        if let product = session.backendData.items.first(where: { $0.plu == plu }) {
+                            Text(product.name)
+                                .background(selectedChoices[selectedStep]?.plu == product.plu ? Color.orange : Color.clear)
+                                .onTapGesture {
+                                    selectedChoices[selectedStep] = product
+                                    
+                                    if selectedChoices.count == data.steps.count {
+                                        for step in data.steps.keys.sorted() {
+                                            if let choice = selectedChoices[step] {
+                                                createNewItem(item: choice)
+                                            }
+                                        }
+                                            
+                                        self.menu = nil
+                                        self.selectedStep = 1
+                                        self.selectedChoices = [:]
+                                    }
+                                }
+                        }
+                    }
+                }
             }
         }
     }
@@ -231,6 +271,17 @@ struct TableView: View {
                 }
             }
         }
+        
+        
+        if let menu = session.backendData.menus.first(where: { $0.item == item.plu }) {
+            print(menu.steps)
+            self.menu = menu
+            self.selectedId = 1
+            self.selectedChoices = [:]
+        }
+            
+        
+        
     }
     
     var overviewView: some View {

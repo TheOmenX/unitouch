@@ -36,6 +36,7 @@ class BackendData {
     @Relationship var categories: [UnitouchCategory] = []
     @Relationship var users: [UnitouchUser] = []
     @Relationship var lookups: [UnitouchLookup] = []
+    @Relationship var menus: [UnitouchMenu] = []
     @Relationship var backgrounds: [UnitouchBackground] = []
     @Relationship var tables: [UnitouchTable] = []
     @Relationship var tableColors: [UnitouchTableColor] = []
@@ -50,6 +51,7 @@ class BackendData {
         self.categories.removeAll()
         self.users.removeAll()
         self.lookups.removeAll()
+        self.menus.removeAll()
         self.backgrounds.removeAll()
         self.tables.removeAll()
         self.tableColors.removeAll()
@@ -185,6 +187,21 @@ class UnitouchLookup {
         
         self.id = id
         self.items = [child]
+    }
+}
+
+@Model
+class UnitouchMenu {
+    var item: Int
+    var steps: [Int:[Int]]
+    
+    init(item: Int, steps: [Int:[Int]]) {
+        self.item = item
+        self.steps = steps
+    }
+    
+    func addStep(step: Int, content: [Int]) {
+        self.steps[step] = content
     }
 }
 
