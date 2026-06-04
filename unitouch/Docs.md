@@ -1,65 +1,163 @@
-##DATAGET
+# Unitouch TCP Command Reference
 
-DATAGET _:
-    - WAITER.txt: get list of waiters
-        <id> <name> <code>\n
-    - REMARKS.txt: List of all items that are remarks
-        <rang> <id> <name>\n
-    - TYPES.txt: all catagories in hand held
-        <id> <name>\n
-    - ART.txt: all items, if items are no remark
-        <id> <name> <TYPES:id> <price> F 0 <rang> ...\n
-    - TBLCELL.txt
-        <BTNfrmCnt: int> <BTNcllCnt: int> <BTNlabel: string> <BTNx: int> <BTNy: int> <BTNw: int> <BTNh: int> <BTNr: int> <BTNaccNum: int>
-    - TBLCOLORS.txt
-        <buttoncolorsID: int> <BTNStatus: int> <BTNFill: int> <BTNText: int>\n
-    
+## 1. Connection & Session Management
 
-## ACCSPLIT
-ACCSPLIT 1 <old_table> 1 <new_table>
-    (After that list of items moved : followed by //END)
-<user> <PLU> <name> <removed(empty)> <amount> <rang> F <price> * <amount> <place> 0
+### `SETUSR <userid> <level>`
+- **Description:** Logs in a waiter for the current session.
+- **Parameters:**
+  - `<userid>`: The numeric ID of the user.
+  - `<level>`: Currently always passed as `5`.
+- **Response:** `200 OK` on success.
 
-##GETNRP
+---
 
+## 2. Master Data Sync (`DATAGET`)
 
-##SETNRP
-SETNRP <? 1> <table> <amount>
-    Set number of persons
-    
-##ACCPAY
-ACCPAY <? 1> table
-    <payment method id> <payment method name> <_>
-    97 Interpay Plus 3 0 1 Tijn 0 RepBillSmall 0 1 MAESTRO 679058******5042 16402188 <some uid>
+Downloads structural data for the POS terminal.
 
-##ACCPUT
-ACCPUT
+### `DATAGET TIMESTAMP.txt`
+- **Description:** Retrieves the backend timestamp to verify if the local cached master data is up to date.
 
-    
+### `DATAGET WAITER.txt`
+- **Description:** Gets a list of waiters.
+- **Format:** `<id>\t<name>\t<code>\n`
 
+### `DATAGET REMARKS.txt`
+- **Description:** Gets a list of all items marked as remarks/lookups.
+- **Format:** `<rang>\t<id>\t<name>\n`
 
-##Viva Payments
-###Referal
-vivapayclient://pay/v1?callback=unitouch&merchantKey=1570006a-b5c8-ed11-b597-0022489e30c9&appId=com.tijngiesberts.unitouch&action=sale&amount=1&tipAmount=1&clientTransactionId=210
+### `DATAGET TYPES.txt`
+- **Description:** Gets all product categories.
+- **Format:** `<id>\t<name>\n`
 
-###Callback
-unitouch://result?transactionId=03e62a3b-a05d-4941-a194-f12722b7a4ab&transactionEventId=0&bankId=NET_MASTER&appId=A0000000043060&tipAmount=1&transactionDate=2026-01-30T20:12:08.976+0100&amount=2&cardType=Maestro&transactionTypeId=5&verificationMethod=Contactless&accountNumber=************5023&tid=16569864&authorisationCode=021A31&shortOrderCode=6030207782&action=sale&clientTransactionId=210&status=success&message=Transaction%20successful&merchantReference=210&referenceNumber=631366&rrn=603019631366&orderCode=6030207782569864
+### `DATAGET ART.txt`
+- **Description:** Gets all items/products (excluding remarks).
+- **Format:** `<id>\t<name>\t<TYPES:id>\t<price>\tF\t0\t<rang>...\n`
 
+### `DATAGET TBLCELL.txt`
+- **Description:** Gets table map structural layout (cells).
+- **Format:** `<BTNfrmCnt> <BTNcllCnt> <BTNlabel> <BTNx> <BTNy> <BTNw> <BTNh> <BTNr> <BTNaccNum>`
 
+### `DATAGET TBLCOLORS.txt`
+- **Description:** Gets color codes for the table map entries.
+- **Format:** `<buttoncolorsID>\t<BTNStatus>\t<BTNFill>\t<BTNText>\n`
 
+### `BINDATAGET <filename>`
+- **Description:** Binary request used to fetch images, specifically table map backgrounds.
+- **Example:** `BINDATAGET 288-back01.jpg`
 
+---
 
+## 3. Table Navigation & Information
 
+### `PLSTOPEN 1`
+- **Description:** Retrieves a list of all currently open tables.
+- **Returns:** Multi-line string with parsed `OpenTable` records.
 
-##Error Codes
+### `PLSTSPLIT <formatted_table_flat>`
+- **Description:** Retrieves a list of all sub-tables associated with a specific table. Returns empty if a table isn't split.
+- **Used For:** Determining if the app should enter `.splitSelection` or jump right into `.order`.
 
-200 Ok
-201 ready
+### `ACCGETALL 1 <table_flat>`
+- **Description:** Opens a table strictly to read/add items (generates locks).
+- **Returns:** List of items (`NewItem` formatted) currently placed on the table.
+- **Error States:** `401 Account Locked` if busy.
 
-400 Syntax Error
-401 Account Locked
-402 Destination Account Locked
-425 Quantity not available
-426 
+### `ACCGET 1 <table_flat>`
+- **Description:** Prepares opening an empty table or interacting strictly for moving/merging purposes. Returns `201 Ready` when viable.
 
-503 Command not supported
+### `ACCCLOSE`
+- **Description:** Closes the current table session context on the server to release the lock on the table.
+
+### `GETNRP 1 <table_flat>`
+- **Description:** Fetches the current 'Number of Persons' (covers) attributed to the table.
+
+### `SETNRP 1 <table_flat> <amount>`
+- **Description:** Sets the 'Number of Persons' on a given table. Called if `GETNRP` returns 0.
+
+---
+
+## 4. Ordering & Item Management
+
+### `ACCPUT 1 <table_flat>` (Upload)
+- **Description:** Upload payload of newly created items and/or deleted items appended to the table bill.
+- **Payload Output Format:** Consecutive list of `item.outputNew` or `item.outputDelete` concatenations.
+
+### `GETPLULOCKS2`
+- **Description:** Retrieves a list of globally blocked items and their stock/lock count.
+- **Format:** `<plu>:<count>[/.../]`
+
+### `ADDPLULCKCNT <plu> <count>`
+- **Description:** Adjusts local PLU lock quantities (used for reserving items).
+- **Error States:** `425 Quantity not available`.
+
+---
+
+## 5. Table Operations (Split & Move)
+
+### `ACCSTATE 1 <table_flat>`
+- **Description:** Checks the table status before transferring items (Move or Split).
+- **Returned States:**
+  - `1` - Empty table (can be transferred directly).
+  - `2` - Table has items (requires explicit user confirmation to merge).
+  - `5` or `6` - Table locked/busy (Move fails).
+
+### `ACCMOVE 1 <old_table_flat> 1 <new_table_flat>`
+- **Description:** Transfers/merges an entire table natively to another table.
+
+### `ACCSPLIT 1 <old_table_flat> 1 <new_table_flat>` (Upload)
+- **Description:** Transfers specific subset of items from an older table to a new (or sub) table.
+- **Payload Format:** `<user> <PLU> <name> <removed(empty)> <amount> <rang> F <price> * <amount> <place> 0`
+
+---
+
+## 6. Billing & Checkout
+
+### `PLSTPAID 1 <amount>`
+- **Description:** Retrieves a list of all previously paid tables.
+- **Returns:** Multi-line string
+
+### `ACCBILL 1 <table_flat>`
+- **Description:** Generates the bill/receipt in memory and responds with the current total balance due.
+- **Error States:** `401 Account Locked`, `406 Table Empty`.
+
+### `GETBILL`
+- **Description:** Downloads the human-readable receipt generated by `ACCBILL`.
+
+### `ACCPAY 1 <table_flat>` (Upload)
+- **Description:** Finalizes payment for a table and closes out the transaction. 
+- **Payload Format:**
+  `<payment_method_id>\t<method_name>\t<user_id>\t1\t1\t<user_name>\t\t0\tRepBillSmall\t0`
+  *Optionally followed by card data (MAESTRO, card token, TID, references, etc.)*
+
+### Auxiliary Receipt Commands
+- `GETBILLREF <billId>` - Fetches a historical paid receipt.
+- `PRINTBILLREF <billId>` - Prints a historical paid receipt.
+- `ACCPRINT RepBillSmall` - Prints the currently active receipt.
+
+---
+
+## 7. Viva Payments Integration
+
+### Deep Link Referral (Sale)
+`vivapayclient://pay/v1?callback=unitouch&merchantKey=<...>&appId=com.tijngiesberts.unitouch&action=sale&amount=1&tipAmount=1&clientTransactionId=<...>`
+
+### URL Scheme Callback
+`unitouch://result?transactionId=<uuid>&transactionEventId=0&bankId=NET_MASTER...&status=success...`
+
+*Note: Handled gracefully via `finishVivaPayment` validating table balance state vs. `ACCBILL` before submitting `ACCPAY` completion.*
+
+---
+
+## 8. General Error Codes
+
+| Code | Description |
+| ---- | ----------- |
+| `200` | OK |
+| `201` | Ready (Table loaded/moved) |
+| `400` | Syntax Error |
+| `401` | Account Locked (Table is busy/reserved by another terminal) |
+| `402` | Destination Account Locked |
+| `406` | Table Empty (Failed to process bill) |
+| `425` | Quantity not available (PLU blocked) |
+| `503` | Command not supported |

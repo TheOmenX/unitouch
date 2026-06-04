@@ -11,27 +11,11 @@ struct SplitTableView: View {
     @ObservedObject var session: SessionManager
     
     var body: some View {
-        ZStack{
-            GeometryReader { geometry in
-                let columns = 8
-                let spacing: CGFloat = 1
-                let totalSpacing = spacing * CGFloat(columns - 1)
-                let itemSize = (geometry.size.width - totalSpacing) / CGFloat(columns)
+        VStack{
+            ScrollView {
                 VStack{
-                    List {
-                        ForEach(session.currentTableItems.indices, id: \.self) { index in
-                            HStack {
-                                Text("\(session.currentTableItems[index].quantity - session.currentTableItems[index].splitMove)")
-                                    .frame(width: itemSize)
-                                Text("\(session.currentTableItems[index].splitMove)")
-                                    .frame(width: itemSize)
-                                Text(session.currentTableItems[index].name)
-                                    .frame(width: itemSize*6, alignment: .leading)
-                                    .font(session.currentTableItems[index].comment ? .caption : .body )
-                                
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
-                            .contentShape(Rectangle())
+                    ForEach(session.currentTableItems.indices, id: \.self) { index in
+                        itemContainer(items: session.currentTableItems, index: index)
                             .gesture(
                                 DragGesture(minimumDistance: 50, coordinateSpace: .local)
                                     .onEnded { value in
@@ -65,22 +49,111 @@ struct SplitTableView: View {
                                         
                                     }
                             )
-                        }
-                    }
-                    .listStyle(.plain)
-                    HStack() {
-                        SelectionButton(text: "Annuleren", width: itemSize*4 + spacing*3, height: itemSize*2, action1: {
-                            session.closeTable()
-                        })
-                        SelectionButton(text: "Bevestigen", width: itemSize*4 + spacing*3, height: itemSize*2, action1: {
-                            session.continueSplitTable()
-                        })
                     }
                 }
+                .background(Color.background[800])
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.background[700].opacity(0.3), lineWidth: 2)
+                )
+                .padding(12)
             }
+            
+            Spacer()
+            Divider()
+                .frame(maxWidth: .infinity)
+                .background(Color.background[700])
+            VStack{
+                HStack{
+                    PrimaryFilledButton(action: {
+                        session.continueSplitTable(next: .move)
+                    }) {
+                        Text("Verplaatsen")
+                            .font(.custom("Roboto-Bold", size: 16))
+                    }
+                    PrimaryFilledButton(action: {
+                        session.continueSplitTable(next: .pay)
+                        
+                    }) {
+                        Text("Betalen")
+                            .font(.custom("Roboto-Bold", size: 16))
+                    }
+                }
+                BlankOutlineButton(action: {
+                    session.closeTable()
+                }) {
+                    Text("Annuleren")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 24)
         }
-        .onAppear(){
-            print(session.currentTableItems)
+    }
+
+    @ViewBuilder
+    func itemContainer(items: [NewItem], index: Int) -> some View {
+        let item = items[index]
+        let nextItem = items.indices.contains(index+1) ? items[index+1] : nil
+        let isComment = item.comment
+        let nextIsComment = nextItem?.comment ?? false
+        
+        if isComment {
+            HStack{
+                Spacer().frame(width: 24)
+                Circle()
+                    .foregroundStyle(Color.background[600])
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Text("\(item.quantity - item.splitMove)")
+                            .font(.custom("Roboto-Bold", size: 10))
+                            .foregroundStyle(Color.background[800])
+                    )
+                Spacer().frame(width: 12)
+                    
+                Text(item.name)
+                    .font(.custom("Roboto-Italic", size: 13))
+                    .foregroundStyle(Color.background[600])
+                Spacer()
+                Circle()
+                    .foregroundStyle(Color.background[600])
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Text("\(item.splitMove)")
+                            .font(.custom("Roboto-Bold", size: 10))
+                            .foregroundStyle(Color.background[800])
+                    )
+                Spacer().frame(width: 12)
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, nextIsComment ? 2 : 10)
+        } else {
+            HStack {
+                Text("\(item.quantity - item.splitMove)x")
+                    .font(.custom("Roboto-Bold", size: 18))
+                    .foregroundStyle(Color.background[100])
+                    .frame(width: 36, height: 36)
+                    .background(Color.background[900])
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                Text(item.name)
+                    .font(.custom("Roboto-Bold", size: 18))
+                
+                Spacer()
+                Text("\(item.splitMove)x")
+                    .font(.custom("Roboto-Bold", size: 18))
+                    .foregroundStyle(Color.background[100])
+                    .frame(width: 36, height: 36)
+                    .background(Color.background[900])
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, nextIsComment ? 2 : 10)
+        }
+        if !nextIsComment {
+            Divider()
+                .frame(maxWidth: .infinity)
+                .background(Color.background[700])
         }
     }
 }
