@@ -66,8 +66,9 @@ struct UnitouchProduct: Codable, Hashable {
     var followPrevious: Bool
     var unk2: Bool
     var unk3: Int
+    var color: Int
 
-    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, lookup: Int, rang: Int, followPrevious: Bool, unk2: Bool, unk3: Int) {
+    init(plu: Int, name: String, page: Int, price: Double, unk1: Bool, lookup: Int, rang: Int, followPrevious: Bool, unk2: Bool, unk3: Int, color: Int) {
         self.plu = plu
         self.name = name
         self.page = page
@@ -78,6 +79,7 @@ struct UnitouchProduct: Codable, Hashable {
         self.followPrevious = followPrevious
         self.unk2 = unk2
         self.unk3 = unk3
+        self.color = color
     }
     
     init?(raw: String){
@@ -92,8 +94,10 @@ struct UnitouchProduct: Codable, Hashable {
             let rang = Int(parts[6]),
             let unk3 = Int(parts[9])
         else {
+            print("Item not added \(parts[2]) \(parts[1]))")
             return nil
         }
+        let color = Int(parts.last ?? "0") ?? 0
         
         self.plu = plu
         self.name = String(parts[1])
@@ -105,6 +109,7 @@ struct UnitouchProduct: Codable, Hashable {
         self.followPrevious = (parts[7] == "T")
         self.unk2 = (parts[8] == "T")
         self.unk3 = unk3
+        self.color = color
     }
 }
 
@@ -264,7 +269,6 @@ struct UnitouchTableColor: Codable {
         self.BTNText = BTNText
     }
 }
-
 
 struct NewItem: Hashable, Identifiable {
     var id = UUID()
@@ -446,32 +450,31 @@ struct TableInfo: Equatable {
     
 }
 
-struct OpenTable {
+struct OpenTable: Identifiable {
+    var id = UUID()
     var tableInfo: TableInfo
     var balance: Double
     var time: String
     var comment: String
-    var unk1: Int
     var status: Int
     
-    init(tableInfo: TableInfo, balance: Double, time: String, comment: String, unk1: Int, status: Int) {
-        self.tableInfo = tableInfo
+    init(tableInfo: TableInfo, balance: Double, time: String, comment: String, status: Int) {
+        self.id = UUID()
         self.tableInfo = tableInfo
         self.balance = balance
         self.time = time
         self.comment = comment
-        self.unk1 = unk1
         self.status = status
     }
     
     init?(raw: String) {
         let parts = raw.components(separatedBy: "\t")
+        print(parts)
         
         guard
             parts.count >= 8,
             let tableInfo = TableInfo(flatTable: String(parts[0])),
             let balance = Double(parts[1]),
-            let unk1 = Int(parts[4]),
             let status = Int(parts[7])
         else {
             return nil
@@ -480,8 +483,7 @@ struct OpenTable {
         self.tableInfo = tableInfo
         self.balance = balance
         self.time = parts[2]
-        self.comment = parts[3]
-        self.unk1 = unk1
+        self.comment = parts[5]
         self.status = status
         
     }

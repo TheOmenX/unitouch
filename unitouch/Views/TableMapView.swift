@@ -54,7 +54,7 @@ struct TableMapView: View {
                 let centerX = CGFloat(table.BTNx) * scalar + rectW / 2 + offset
                 let centerY = CGFloat(table.BTNy) * scalar + rectH / 2 + offset
                 let tableKey = "\(table.BTNaccNum)0"
-                let tableStatus = session.tableStatus.first(where: { $0.tableInfo.formatTableFlat == tableKey })?.status ?? 0
+                let tableStatus = session.openTables.first(where: { $0.tableInfo.formatTableFlat == tableKey })?.status ?? 0
                 let fillIntColor = session.backendData.tableColors.first(where: { "\($0.BTNStatus)" == "\(tableStatus)" })?.BTNFill ?? 65280
                 let textIntColor = session.backendData.tableColors.first(where: { "\($0.BTNStatus)" == "\(tableStatus)" })?.BTNText ?? 16711680
                 
@@ -66,7 +66,7 @@ struct TableMapView: View {
                         if let table = TableInfo(flatTable: "\(table.BTNaccNum)0") {
                             session.checkSubTable(table: table, nextState: nextState)
                         } else {
-                            session.activeError = .unknown(err: "Kon tafel niet openen")
+                            session.activeError = .openTableFailed(details: "Tafel kon niet worden geopend, er ging iets mis bij het verwerken van de tafelgegevens.")
                         }
                     }
             
