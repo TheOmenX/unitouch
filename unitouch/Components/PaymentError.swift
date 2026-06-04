@@ -1,4 +1,12 @@
 //
+//  PaymentComplete 2.swift
+//  unitouch
+//
+//  Created by Tijn Giesberts on 05/05/2026.
+//
+
+
+//
 //  PaymentComplete.swift
 //  unitouch
 //
@@ -7,31 +15,32 @@
 
 import SwiftUI
 
-struct PaymentComplete: View {
+struct PaymentError: View {
     var amount: Double
-    var tip: Double
+    var retry: () -> Void = {}
     var close: () -> Void = {}
     
     var body: some View {
         VStack{
             ZStack {
-                LinearGradient(colors: [.green.opacity(0.15), Color.clear], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [Color.danger[500].opacity(0.25), Color.clear], startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .center) {
                     Circle()
-                        .foregroundStyle(.green.opacity(0.3))
+                        .foregroundStyle(Color.danger[500].opacity(0.3))
                         .frame(width: 100, height: 100)
                         .overlay (
-                            Image(systemName: "checkmark.circle")
+                            Image(systemName: "x.circle")
                                 .font(.system(size: 52))
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.danger[500])
                         )
-                    Text("BETALING VOLTOOID")
+                    Text("FOUT BIJ BETALING")
                         .font(.custom("Roboto-Bold", size: 18))
                         .foregroundStyle(Color.primary[500])
                         .padding(.top, 5)
                     Text("\((amount).formatted(.currency(code: "EUR")))")
                         .padding(.vertical, 2)
                         .font(.custom("Roboto-Bold", size: 32))
+                        .strikethrough()
                         
                 }
             }
@@ -51,7 +60,7 @@ struct PaymentComplete: View {
                         .foregroundStyle(Color.background[400])
                     Spacer()
                     
-                    Text("\((amount-tip).formatted(.currency(code: "EUR")))")
+                    Text("\(amount.formatted(.currency(code: "EUR")))")
                         .font(.custom("Roboto-Bold", size: 16))
                 }
                 .padding(20)
@@ -59,25 +68,7 @@ struct PaymentComplete: View {
                 .background(Color.background[750].opacity(0.3))
                 .cornerRadius(16)
                 
-                HStack{
-                    Image(systemName: "creditcard")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.primary[500])
-                    Text("Fooi")
-                        .font(.custom("Roboto-Regular", size: 16))
-                        .foregroundStyle(Color.background[400])
-                    Spacer()
-                    
-                    Text("\(tip.formatted(.currency(code: "EUR")))")
-                        .font(.custom("Roboto-Bold", size: 16))
-                    
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity)
-                .background(Color.background[750].opacity(0.3))
-                .cornerRadius(16)
-                
-                HStack{
+                /*HStack{
                     Image(systemName: "clock")
                         .font(.system(size: 20))
                         .foregroundStyle(Color.primary[500])
@@ -92,7 +83,7 @@ struct PaymentComplete: View {
                 .padding(20)
                 .frame(maxWidth: .infinity)
                 .background(Color.background[750].opacity(0.3))
-                .cornerRadius(16)
+                .cornerRadius(16)*/
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 18)
@@ -114,6 +105,12 @@ struct PaymentComplete: View {
     HStack{
         Text("")
     }.popup(isPresented: .constant(true), content: {
-        PaymentComplete(amount: 26.00, tip: 2.44)
+        PaymentError(
+            amount: 26.00,
+            retry: {
+            },
+            close: {
+            }
+        )
     })
 }

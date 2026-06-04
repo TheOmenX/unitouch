@@ -21,12 +21,13 @@ struct LoginView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading) {
-                Text("Welcome Back")
+                Text("Welkom Terug")
                     .font(.custom("Roboto-Bold", size: 34, relativeTo: .largeTitle))
+                    .foregroundStyle(Color.background[100])
                     .padding(.top, 24)
                     .padding(.bottom, 2)
                 
-                Text("Select your identity to unlock the terminal.")
+                Text("Selecteer uw identiteit om de terminal te ontgrendelen.")
                     .font(.custom("Roboto-Regular", size: 17, relativeTo: .body))
                     .foregroundStyle(Color.background[100])
                 
@@ -35,7 +36,7 @@ struct LoginView: View {
                         Rectangle()
                             .frame(width: 18, height: 5)
                             .foregroundStyle(Color.primary[500])
-                        Text("QUICK ACCESS")
+                        Text("SNELLE TOEGANG")
                             .font(.custom("Roboto-Bold", size: 13, relativeTo: .footnote)) // Looks like a small header, footprint size fits best here
                             .foregroundStyle(Color.background[100])
                     }
@@ -61,6 +62,7 @@ struct LoginView: View {
                             VStack (alignment: .leading){
                                 Text("\(recentUser?.name ?? "")")
                                     .font(.custom("Roboto-Bold", size: 28, relativeTo: .title))
+                                    .foregroundStyle(Color.background[100])
                                 
                                 Text("Tap to resume terminal access")
                                     .font(.custom("Roboto-Regular", size: 13, relativeTo: .footnote))
@@ -91,7 +93,7 @@ struct LoginView: View {
                         .frame(width: 18, height: 5)
                         .foregroundStyle(Color.background[700])
                     
-                    Text("STAFF DIRECTORY")
+                    Text("PERSONEELSLIJST")
                         .font(.custom("Roboto-Bold", size: 13, relativeTo: .footnote))
                         .foregroundStyle(Color.background[100])
                 }
@@ -110,6 +112,7 @@ struct LoginView: View {
                         
                         Text("\(user.name)")
                             .font(.custom("Roboto-Bold", size: 28, relativeTo: .title))
+                            .foregroundStyle(Color.background[100])
                         
                         Spacer()
                         

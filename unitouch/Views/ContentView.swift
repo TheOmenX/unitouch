@@ -14,6 +14,8 @@ struct ContentView: View {
     @Environment(\.modelContext) var modelContext
     @Query var payments: [Payment]
     
+    @State private var showVivaWalletPopup: (Double, Double)? = nil
+    
     var body: some View {
         VStack{
             ZStack{
@@ -26,7 +28,7 @@ struct ContentView: View {
                 case .loading:
                     LoadingView()
                 case .order:
-                    TableView(session: session)
+                    TableView(session: session, newItems: $session.newItems, deletedItems: $session.deletedItems)
                 case .splitTable:
                     SplitTableView(session: session)
                 case .payment(let balance, let bill):
@@ -46,67 +48,70 @@ struct ContentView: View {
                     SelectionView(session: session, payments: payments)
                 case .tableMap(let nextState):
                     TableMapView(session: session, nextState: nextState)
-                default:
-                    LoadingView()
                 }
             }
-        }
-        .background(Color.background[900])
-        .ignoresSafeArea(edges: .bottom)
-        .alert(item: $session.activeError) { errorInfo in
-            Alert(
-                title: Text("Er ging iets mis"),
-                message: Text(errorInfo.message),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-        .task {
-            await session.verifyData()
-        }
-        .onOpenURL {url in
-            guard
-                url.host() == "result",
-                let params = url.queryParameters,
-                let result = params.first(where: { key, value in key == "status" })?.value,
-                let message = params.first(where: {key, _ in key == "message"})?.value
-            else {
-                //session.activeError = .invalidPaymentURL
-                return
+            .background(Color.background[900])
+            .ignoresSafeArea(.container, edges: .bottom)
+            .popup(item: $session.activeError) { item in
+                ErrorPopup(error: item, close: {
+                    session.activeError = nil
+                })
             }
-            
-            if result == "failure" {
-                session.activeError = .unknown(err: message.removingPercentEncoding ?? "")
-            }else if result == "success" {
+            .popup(item: $showVivaWalletPopup) { item in
+                PaymentComplete(amount: item.0, tip: item.1, close: {
+                    self.showVivaWalletPopup = nil
+                })
+            }
+            .task {
+                await session.verifyData()
+            }
+            .onOpenURL {url in
                 guard
-                    let merchantReference = params.first(where: {key, _ in key == "merchantReference"})?.value,
-                    let userIdRaw = merchantReference.components(separatedBy: "-").first,
-                    let userId = Int(userIdRaw),
-                    let userName = merchantReference.components(separatedBy: "-").dropFirst().first,
-                    let tableFlat = merchantReference.components(separatedBy: "-").dropFirst(2).first,
-                    let table = TableInfo(flatTable: tableFlat),
-                    let amountRaw = params.first(where: {key, _ in key == "amount"})?.value,
-                    let tipAmountRaw = params.first(where: {key, _ in key == "tipAmount"})?.value,
-                    let amount = Double(amountRaw),
-                    let tipAmount = Double(tipAmountRaw)
+                    url.host() == "result",
+                    let params = url.queryParameters,
+                    let result = params.first(where: { key, value in key == "status" })?.value,
+                    let message = params.first(where: {key, _ in key == "message"})?.value
                 else {
+                    session.activeError = .invalidVivaWalletURL
                     return
                 }
-                
-                if let currentUser = session.currentUser {
-                    session.setUsers(user: currentUser, setState: false)
-                }else {
-                    let recentUser = DataManager.shared.load(forKey: "recentUser", as: UnitouchUser.self)
-                    if let recentUser = recentUser {
-                        session.setUsers(user: recentUser, setState: false)
+                    
+                if result == "failure" {
+                    let errorCode = params.first { $0.key == "errorCode" }?.value
+                    if errorCode != "1000" {
+                        let errorMessage = message.removingPercentEncoding ?? "Onbekende fout"
+                        session.activeError = .vivaPaymentProcessingError(details: errorMessage)
                     }
+                }else if result == "success" {
+                    guard
+                        let merchantReference = params.first(where: {key, _ in key == "merchantReference"})?.value,
+                        let userIdRaw = merchantReference.components(separatedBy: "-").first,
+                        let userId = Int(userIdRaw),
+                        let userName = merchantReference.components(separatedBy: "-").dropFirst().first,
+                        let tableFlat = merchantReference.components(separatedBy: "-").dropFirst(2).first,
+                        let table = TableInfo(flatTable: tableFlat),
+                        let amountRaw = params.first(where: {key, _ in key == "amount"})?.value,
+                        let tipAmountRaw = params.first(where: {key, _ in key == "tipAmount"})?.value,
+                        let amount = Double(amountRaw),
+                        let tipAmount = Double(tipAmountRaw)
+                    else {
+                        session.activeError = .invalidVivaWalletURL
+                        return
+                    }
+                    
+                    if let currentUser = session.currentUser {
+                        session.setUsers(user: currentUser, setState: false)
+                    }else {
+                        let recentUser = DataManager.shared.load(forKey: "recentUser", as: UnitouchUser.self)
+                        if let recentUser = recentUser {
+                            session.setUsers(user: recentUser, setState: false)
+                        }
+                    }
+                    session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName, modelContext: modelContext)
+                    self.showVivaWalletPopup = (amount/100, tipAmount/100)
+                    
                 }
-                session.finishVivaPayment(table: table, amount: amount/100, tipAmount: tipAmount/100, userId: userId, userName: userName, modelContext: modelContext)
             }
         }
     }
-}
-
-
-#Preview {
-    ContentView()
 }

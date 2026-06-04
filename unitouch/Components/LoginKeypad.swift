@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct LoginKeypad: View {
-    var passcodeLength: Int = 3
+    @State var passcodeLength: Int = 3
     var onComplete: ((String) -> Void)? = nil
     var onCancel: (() -> Void)? = nil
     @State private var passcode: String = ""
@@ -19,6 +19,7 @@ struct LoginKeypad: View {
             VStack {
                 Text("Login Required")
                     .font(.title)
+                    .foregroundStyle(Color.background[100])
                     .bold()
                 Text("Enter Your Personal Passcode Below")
                     .font(.subheadline)
