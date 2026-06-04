@@ -35,6 +35,7 @@ struct BackendData: Codable {
     var categories: [UnitouchCategory] = []
     var users: [UnitouchUser] = []
     var lookups: [UnitouchLookup] = []
+    var menus: [UnitouchMenu] = []
     var backgrounds: [UnitouchBackground] = []
     var tables: [UnitouchTable] = []
     var tableColors: [UnitouchTableColor] = []
@@ -49,6 +50,7 @@ struct BackendData: Codable {
         self.categories.removeAll()
         self.users.removeAll()
         self.lookups.removeAll()
+        self.menus.removeAll()
         self.backgrounds.removeAll()
         self.tables.removeAll()
         self.tableColors.removeAll()
@@ -185,6 +187,21 @@ struct UnitouchLookup: Codable {
         
         self.id = id
         self.items = [child]
+    }
+}
+
+class UnitouchMenu: Codable, Identifiable {
+    var id = UUID()
+    var item: Int
+    var steps: [Int:[Int]]
+    
+    init(item: Int, steps: [Int:[Int]]) {
+        self.item = item
+        self.steps = steps
+    }
+    
+    func addStep(step: Int, content: [Int]) {
+        self.steps[step] = content
     }
 }
 
