@@ -463,22 +463,24 @@ struct TableView: View {
                 .padding(.top, 24)
             }
         }
-        .sheet(item: $menu) { data in
+        .popup(item: $menu) { data in
             HStack {
                 VStack {
                     List(data.steps.sorted(by: { $0.key < $1.key }), id: \.key) { item in
                         Text("Rang \(item.key)")
-                            .background(selectedStep == item.key ? Color.orange : Color.clear)
+                            .font(.custom("Roboto-Bold", size: 20))
+                            .listRowBackground(selectedStep == item.key ? Color.primary[600] : (selectedChoices[item.key] != nil ? Color.primary[800] : Color.background[900]))
                             .onTapGesture {
                                 selectedStep = item.key
                             }
                     }
+                    .scrollContentBackground(.hidden)
                 }
                 VStack {
                     List(data.steps[selectedStep]?.sorted() ?? [], id: \.self) { plu in
                         if let product = session.backendData.items.first(where: { $0.plu == plu }) {
                             Text(product.name)
-                                .background(selectedChoices[selectedStep]?.plu == product.plu ? Color.orange : Color.clear)
+                                .listRowBackground(selectedChoices[selectedStep]?.plu == product.plu ? Color.primary[600] : Color.background[900])
                                 .onTapGesture {
                                     selectedChoices[selectedStep] = product
                                     
@@ -496,6 +498,7 @@ struct TableView: View {
                                 }
                         }
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
         }
