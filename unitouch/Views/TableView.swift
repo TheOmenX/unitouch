@@ -14,9 +14,8 @@ fileprivate struct LookupItems: Identifiable {
 }
 
 enum TableTab {
-    case selection, overview, functions
+    case selection, overview, search
 }
-
 
 struct TableView: View {
     @ObservedObject var session: SessionManager
@@ -24,8 +23,9 @@ struct TableView: View {
     @Binding var newItems: [NewItem]
     @Binding var deletedItems: [NewItem]
     
-    @State private var lookupItems: LookupItems? = nil
+    var searchMode: Bool = false
     
+    @State private var lookupItems: LookupItems? = nil
     
     @State private var menu: UnitouchMenu? = nil
     @State private var selectedStep: Int = 1
@@ -71,7 +71,7 @@ struct TableView: View {
                         }
                     }) {
                         ZStack(alignment: .center) {
-                            Text("Tafel \(session.currentTable?.formatTableRaw ?? "-")")
+                            Text(searchMode ? "Tafel Zoeken" : "Tafel \(session.currentTable?.formatTableRaw ?? "-")")
                                 .font(.custom("Roboto-Bold", size: 18))
                                 .foregroundStyle(Color.primary[500])
                             HStack{
@@ -130,7 +130,12 @@ struct TableView: View {
             
             TabView(selection: $activeTab){
                 selectionView.tag(TableTab.selection)
-                overviewView.tag(TableTab.overview)
+                if(searchMode) {
+                    searchView.tag(TableTab.search)
+                } else {
+                    overviewView.tag(TableTab.overview)
+                }
+                
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea(edges: .bottom)
@@ -191,9 +196,6 @@ struct TableView: View {
                                     deletedItems.append(comment)
                                 }
                             }
-                            
-                            
-                        
                     }
                 }
                     
@@ -325,6 +327,22 @@ struct TableView: View {
         return items.filter { seen.insert($0.plu).inserted }
     }
     
+    // Centralized tap handler
+    private func handleItemTap(item: UnitouchProduct) {
+        if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+            if session.blockedItems[idx].count > 0 {
+                session.blockedItems[idx].count -= 1
+                session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
+                    createNewItem(item: item)
+                }
+            } else {
+                session.activeError = .itemBlocked
+            }
+        } else {
+            createNewItem(item: item)
+        }
+    }
+    
     var selectionView: some View {
         VStack(spacing: 0){
             HStack(spacing: 0){
@@ -333,7 +351,14 @@ struct TableView: View {
                     Divider()
                         .frame(maxHeight: .infinity)
                         .foregroundStyle(Color.background[700])
-                    itemBar
+                    
+                    ItemBarView(
+                        items: session.backendData.items,
+                        selectedCategoryId: selectedId,
+                        session: session
+                    ) { selectedItem in
+                        handleItemTap(item: selectedItem)
+                    }
                 } else {
                     ScrollView {
                         VStack {
@@ -341,7 +366,10 @@ struct TableView: View {
                                 .filter { (it: UnitouchProduct) in it.name.lowercased().contains(searchText.lowercased().trimmingCharacters(in: .whitespaces)) }),
                                     id: \.self
                             ) { item in
-                                itemRow(item: item)
+                                let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
+                                ItemRowView(item: item, blockedCount: blockedCount) {
+                                    handleItemTap(item: item)
+                                }
                             }
                         }
                     }
@@ -379,11 +407,9 @@ struct TableView: View {
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 16))
                     .cornerRadius(16)
-                    // --- NEW VISUAL EFFECTS ---
-                    .opacity(isPressed ? 0.6 : 1.0)          // Dims the button when pressed
-                    .scaleEffect(isPressed ? 0.98 : 1.0)     // Optional: Adds a subtle "squish" effect
-                    .animation(.easeInOut(duration: 0.1), value: isPressed) // Makes the transition smooth
-                    // --- UPDATED GESTURES ---
+                    .opacity(isPressed ? 0.6 : 1.0)
+                    .scaleEffect(isPressed ? 0.98 : 1.0)
+                    .animation(.easeInOut(duration: 0.1), value: isPressed)
                     .onLongPressGesture(
                         minimumDuration: 0.7,
                         perform: {
@@ -420,18 +446,26 @@ struct TableView: View {
                         .cornerRadius(16)
                     }
                 }
-                
-                Button(action: {
-                    session.finishTable(newItems: newItems, deletedItems: deletedItems)
-                }) {
-                    Text("EINDE BESTELLING")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                        .background(Color.primary[500])
-                        .foregroundColor(.black)
-                        .cornerRadius(15)
-                        .font(.custom("Roboto-Bold", size: 20))
-                        .shadow(color: Color.primary[500].opacity(0.5), radius: 5, x: 0, y: 0)
+                if searchMode {
+                    PrimaryFilledButton(action: {
+                        session.searchTables(items: newItems)
+                        activeTab = .search
+                    }) {
+                        Text("TAFEL ZOEKEN")
+                    }
+                } else {
+                    Button(action: {
+                        session.finishTable(newItems: newItems, deletedItems: deletedItems)
+                    }) {
+                        Text("EINDE BESTELLING")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
+                            .background(Color.primary[500])
+                            .foregroundColor(.black)
+                            .cornerRadius(15)
+                            .font(.custom("Roboto-Bold", size: 20))
+                            .shadow(color: Color.primary[500].opacity(0.5), radius: 5, x: 0, y: 0)
+                    }
                 }
             }
             .padding()
@@ -449,7 +483,7 @@ struct TableView: View {
                     id: \.self
                 ) { item in
                     Text(item.name)
-                        .frame(maxWidth: .infinity, alignment: .leading) // Stretch full width
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .padding(.vertical, 8)
                         .padding(.horizontal, 16)
@@ -490,7 +524,7 @@ struct TableView: View {
                                                 createNewItem(item: choice)
                                             }
                                         }
-                                            
+                                        
                                         self.menu = nil
                                         self.selectedStep = 1
                                         self.selectedChoices = [:]
@@ -501,84 +535,6 @@ struct TableView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-        }
-    }
-    
-    
-    /*----------------------------------------------\
-    |                                               |
-    |                   Item Bar                    |
-    |                                               |
-    \----------------------------------------------*/
-    
-    var itemBar: some View{
-        ScrollView{
-            VStack{
-                ForEach(
-                    session.backendData.items
-                        .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 })
-                        .filter { (it: UnitouchProduct) in it.page == selectedId },
-                    id: \.self
-                ) { item in
-                    itemRow(item: item)
-                        
-                }
-            }
-            .padding(.vertical, 8)
-        }
-        .padding(.horizontal, 8)
-    }
-    
-    @ViewBuilder
-    func itemRow(item: UnitouchProduct) -> some View {
-        let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
-        Button(action: {
-            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-                if session.blockedItems[idx].count > 0 {
-                    session.blockedItems[idx].count -= 1
-                    session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
-                        createNewItem(item: item)
-                    }
-                }else {
-                    session.activeError = .itemBlocked
-                }
-            }
-            else {
-                createNewItem(item: item)
-            }
-        }) {
-            HStack{
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color(rgbInteger: item.color))
-                    .frame(width: 6)
-                    .frame(maxHeight: .infinity)
-                Text(item.name)
-                    .font(.custom("Roboto-Bold", size: 20))
-                    .opacity(blockedCount == 0 ? 0.4 : 1)
-                    .multilineTextAlignment(.leading)
-                Spacer()
-                Text("€" + Decimal(item.price).toCurrency)
-                    .font(.custom("Roboto-Bold", size: 14))
-                    .foregroundStyle(Color.primary[500])
-                    .opacity(blockedCount == 0 ? 0.4 : 1)
-                if blockedCount >= 0 {
-                    Image(systemName: "\(blockedCount).circle.fill")
-                        .foregroundStyle(Color.danger[500], Color.danger[500].opacity(0.1))
-                        .font(.system(size: 18))
-                    
-                }else {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(Color.primary[500], Color.primary[500].opacity(0.1))
-                        .font(.system(size: 18))
-                }
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
-            .background(Color.background[700])
-            .opacity(blockedCount == 0 ? 0.4 : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-            .cornerRadius(10)
         }
     }
     
@@ -608,16 +564,12 @@ struct TableView: View {
             }
         }
         
-        
         if let menu = session.backendData.menus.first(where: { $0.item == item.plu }) {
             print(menu.steps)
             self.menu = menu
             self.selectedId = 1
             self.selectedChoices = [:]
         }
-            
-        
-        
     }
     
     var overviewView: some View {
@@ -687,6 +639,7 @@ struct TableView: View {
                             .font(.custom("Roboto-Bold", size: 16))
                     }
                 }
+
                 PrimaryFilledButton(action: {
                     session.finishTable(newItems: newItems, deletedItems: deletedItems)
                 }) {
@@ -694,6 +647,101 @@ struct TableView: View {
                 }
             }
             .padding(.horizontal, 8)
+        }
+    }
+    
+    var searchView: some View {
+        VStack{
+            ScrollView {
+                VStack{
+                    let combinedItems = session.currentTableItems + newItems
+                    ForEach(combinedItems.indices, id: \.self) { index in
+                        itemContainer(items: combinedItems, index: index)
+                            .onTapGesture {
+                                clickedItem = combinedItems[index]
+                            }
+                    }
+                }
+                .background(Color.background[800])
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.background[700].opacity(0.3), lineWidth: 2)
+                )
+                .padding(12)
+            }
+            
+            Spacer()
+            Divider()
+                .frame(maxWidth: .infinity)
+                .background(Color.background[700])
+            
+            ScrollView {
+                ForEach(session.openTables.filter { !$0.locked }) { table in
+                    HStack {
+                        VStack{
+                            HStack{
+                                Text("Tafel \(table.tableInfo.formatTableRaw)")
+                                    .font(.custom("Roboto-Bold", size: 18))
+                                    .foregroundStyle(Color.background[100])
+                            }
+                            HStack(spacing: 0){
+                                Image(systemName: "clock")
+                                    .font(.system(size: 14)) // keep icon size consistent
+                                    .foregroundStyle(Color.background[400])
+                                Text(table.time)
+                                    .foregroundStyle(Color.background[400])
+                                    .font(.custom("Roboto-Regular", size: 14))
+                            }
+                        }
+                        
+                        Spacer()
+                        if table.comment != "" {
+                            Text(table.comment)
+                                .font(.custom("Roboto-Bold", size: 16))
+                                .foregroundStyle(Color.primary[500])
+                                
+                        }
+                        Spacer()
+                        
+                        Text(table.balance.formatted(.currency(code: "EUR")))
+                            .font(.custom("Roboto-Bold", size: 18))
+                            .foregroundStyle(Color.background[100])
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .onTapGesture {
+                        session.enterTable(table: table.tableInfo, clearItems: true)
+                    }
+                    Divider()
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            
+            
+            
+            // 1. Filter de geblokkeerde tafels en maak er een komma-gescheiden string van
+            let lockedTablesString = session.openTables
+                .filter { $0.locked == true }
+                .map { String($0.tableInfo.formatTableRaw) }
+                .joined(separator: ", ")
+
+            if !lockedTablesString.isEmpty {
+                Text("*Tafels in gebruik: \(lockedTablesString)")
+                    .padding(.horizontal)
+                    .font(.custom("Roboto-Bold", size: 16))
+                    .foregroundStyle(Color.background[400])
+            }
+            
+            BlankOutlineButton(action: {
+                session.newItems = []
+                session.openTables = []
+                session.resetState()
+            }) {
+                Text("ANNULEREN")
+            }.padding(.horizontal)
         }
     }
     
@@ -751,9 +799,84 @@ struct TableView: View {
 
 /*----------------------------------------------\
 |                                               |
-|                 Categorie Bar                 |
+|           Extracted Modular Views             |
 |                                               |
 \----------------------------------------------*/
+
+struct ItemBarView: View {
+    var items: [UnitouchProduct]
+    var selectedCategoryId: Int
+    @ObservedObject var session: SessionManager
+    
+    // The parent view will define what happens when an item is selected
+    var onItemSelected: (UnitouchProduct) -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack {
+                ForEach(
+                    items
+                        .sorted(by: { $0.unk3 < $1.unk3 })
+                        .filter { $0.page == selectedCategoryId },
+                    id: \.self
+                ) { item in
+                    let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
+                    
+                    ItemRowView(item: item, blockedCount: blockedCount) {
+                        onItemSelected(item)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .padding(.horizontal, 8)
+    }
+}
+
+struct ItemRowView: View {
+    let item: UnitouchProduct
+    let blockedCount: Int
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: {
+            action()
+        }) {
+            HStack{
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(rgbInteger: item.color))
+                    .frame(width: 6)
+                    .frame(maxHeight: .infinity)
+                Text(item.name)
+                    .font(.custom("Roboto-Bold", size: 20))
+                    .opacity(blockedCount == 0 ? 0.4 : 1)
+                    .multilineTextAlignment(.leading)
+                Spacer()
+                Text("€" + Decimal(item.price).toCurrency)
+                    .font(.custom("Roboto-Bold", size: 14))
+                    .foregroundStyle(Color.primary[500])
+                    .opacity(blockedCount == 0 ? 0.4 : 1)
+                
+                if blockedCount >= 0 {
+                    Image(systemName: "\(blockedCount).circle.fill")
+                        .foregroundStyle(Color.danger[500], Color.danger[500].opacity(0.1))
+                        .font(.system(size: 18))
+                } else {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(Color.primary[500], Color.primary[500].opacity(0.1))
+                        .font(.system(size: 18))
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(Color.background[700])
+            .opacity(blockedCount == 0 ? 0.4 : 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .cornerRadius(10)
+        }
+    }
+}
 
 struct CategoryBarView: View {
     var categories: [UnitouchCategory]
@@ -854,4 +977,3 @@ func chunkText(_ text: String, maxLength: Int = 20) -> [String] {
         UnitouchCategory(id: 12, name: "alc. dranken"),
     ], selectedId: $selectedId)
 }
-

@@ -29,6 +29,8 @@ struct ContentView: View {
                     LoadingView()
                 case .order:
                     TableView(session: session, newItems: $session.newItems, deletedItems: $session.deletedItems)
+                case .search:
+                    TableView(session: session, newItems: $session.newItems, deletedItems: $session.deletedItems, searchMode: true)
                 case .splitTable:
                     SplitTableView(session: session)
                 case .payment(let balance, let bill):

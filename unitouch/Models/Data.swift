@@ -474,19 +474,20 @@ struct OpenTable: Identifiable {
     var time: String
     var comment: String
     var status: Int
+    var locked: Bool
     
-    init(tableInfo: TableInfo, balance: Double, time: String, comment: String, status: Int) {
+    init(tableInfo: TableInfo, balance: Double, time: String, comment: String, status: Int, locked: Bool = false) {
         self.id = UUID()
         self.tableInfo = tableInfo
         self.balance = balance
         self.time = time
         self.comment = comment
         self.status = status
+        self.locked = locked
     }
     
     init?(raw: String) {
         let parts = raw.components(separatedBy: "\t")
-        print(parts)
         
         guard
             parts.count >= 8,
@@ -502,6 +503,7 @@ struct OpenTable: Identifiable {
         self.time = parts[2]
         self.comment = parts[5]
         self.status = status
+        self.locked = false
         
     }
 }

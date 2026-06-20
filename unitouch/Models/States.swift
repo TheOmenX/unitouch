@@ -201,7 +201,7 @@ enum UnitouchError: Error, Identifiable {
         case .openingVivaWalletFailed:
             return "De Viva Wallet app kon niet geopend worden. Zorg ervoor dat deze correct is geïnstalleerd op het apparaat."
         case .vivaPaymentProcessingError(let details):
-            return "LET OP: Er is een fout opgetreden tijdens het lokaal verwerken van de betaling. De betaling is WEL ontvangen door Viva Wallet: \(details)"
+            return "LET OP: Er is een fout opgetreden tijdens het lokaal verwerken van de betaling. CHECK IN DE VIVA WALLET APP OF DE TRANSACTIE IS BINNENGEKOMEN: \(details)"
         case .vivaBalanceMismatch(let expected, let received):
             return "LET OP: Het betaalde bedrag komt niet overeen met het verwachtte bedrag. Verwacht: €\(String(format: "%.2f", expected)), Ontvangen: €\(String(format: "%.2f", received)). De tafel is NIET afgerekend."
             

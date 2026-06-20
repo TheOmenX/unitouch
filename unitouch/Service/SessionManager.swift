@@ -19,6 +19,7 @@ enum AppState: Equatable {
     case main                                                           // Screen 3: Main Input
     case splitTable                                                     // Screen 4: Split Table
     case order                                                          // Screen 4: The "Move or Pay" logic
+    case search
     case payment(balance: Decimal, bill: String)
     case tableMap(nextState: SubTableActions)
 }
@@ -440,7 +441,7 @@ class SessionManager: ObservableObject {
     
     
     // MARK: Functions for entring tables
-    func enterTable(table: TableInfo){
+    func enterTable(table: TableInfo, clearItems: Bool = false){
         TCPClient.shared.sendCommand("ACCGETALL 1 \(table.formatTableFlat)", type: .download) { response in
             switch response {
             case .success(let code, let message):
@@ -453,6 +454,10 @@ class SessionManager: ObservableObject {
                 }
             case .content(let data):
                 self.currentTableItems = []
+                if clearItems {
+                    self.newItems = []
+                    self.deletedItems = []
+                }
                 for line in data.split(separator: "\n") {
                     if let item = NewItem(raw: String(line)) {
                         self.currentTableItems.append(item)
@@ -924,4 +929,87 @@ class SessionManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: Functions for searching tables
+    func startTableSearch() {
+        self.state = .search
+        self.openTables = []
+    }
+    
+    func searchTables(items: [NewItem]) {
+        self.openTables = []
+        var itemsMapping: [Int: Int] = [:] // [Plu: Count]
+        
+        var total = 0.0
+        for item in items {
+            total += Double(item.quantity * item.price) / 100
+            
+            if let existingCount = itemsMapping[item.plu] {
+                itemsMapping[item.plu] = existingCount + item.quantity
+            } else {
+                itemsMapping[item.plu] = item.quantity
+            }
+        }
+        
+        TCPClient.shared.sendCommand("PLSTOPEN 1", type: .download) { response in
+            switch response{
+            case .content(let data):
+                self.openTables = []
+                for line in data.split(separator: "\n") {
+                    if var info = OpenTable(raw: String(line)){
+                        if info.balance < total { continue }
+                        
+                        TCPClient.shared.sendCommand("ACCGET 1 \(info.tableInfo.formatTableFlat)", type: .download) { response in
+                            switch response {
+                            case .content(let data):
+                                var itemsMappingCopy = itemsMapping
+                                var failed = false
+                                
+                                for line in data.split(separator: "\n") {
+                                    if let item = NewItem(raw: String(line)) {
+                                        if let existingCount = itemsMappingCopy[item.plu] {
+                                            itemsMappingCopy[item.plu] = existingCount - item.quantity
+                                        }
+                                    }
+                                }
+                                
+                                for (_, count) in itemsMappingCopy {
+                                    if count > 0 {
+                                        failed = true
+                                    }
+                                }
+                                
+                                if !failed {
+                                    self.openTables.append(info)
+                                }else {
+                                    print("\(info.tableInfo.formatTableFlat) - \(itemsMappingCopy)")
+                                }
+                                
+                            case .error(let error):
+                                self.activeError = .networkError(details: error.localizedDescription)
+                            case .success(let code, let message):
+                                if code != 401 {
+                                    self.activeError = .invalidServerResponse(action: "tafel openen tijdens zoeken", details: "\(code) \(message)")
+                                } else {
+                                    info.locked = true
+                                    self.openTables.append(info)
+                                }
+                                    
+                            default:
+                                self.activeError = .invalidServerResponse(action: "tafel openen tijdens zoeken", details: "Onverwachte response")
+                            }
+                        }
+                    }
+                }
+                
+                TCPClient.shared.sendCommand("ACCCLOSE", type: .standard) { _ in }
+            case .error(let error):
+                self.activeError = .openTableMapFailed(details: error.localizedDescription)
+            default:
+                self.activeError = .invalidServerResponse(action: "tafel states opvragen", details: "Onverwachte response")
+            }
+        }
+        
+    }
+        
 }

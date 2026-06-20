@@ -101,6 +101,11 @@ struct SelectionView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 12))
                         .padding(.trailing, 8)
                     }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                            session.startTableSearch()
+                        }
+                    )
                     
                     Button(action: {
                         session.checkSubTable(table: tableNum, nextState: .moveTable)
