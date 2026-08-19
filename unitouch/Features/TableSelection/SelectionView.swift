@@ -9,9 +9,23 @@ import SwiftUI
 import Combine
 
 struct SelectionView: View {
-    @ObservedObject var session: SessionManager
+    @EnvironmentObject var router: AppRouter
+    @EnvironmentObject var store: RestaurantStore
     
-    @State private var tableNum: TableInfo = TableInfo(rawTable: "")
+    @State private var tableString: String = ""
+    
+    var tableInfo: (Int, Int) {
+        let pattern = #"^(?!\.)(\d{0,4})(?:\.(\d?))?$"#
+        
+        guard let match = tableString.range(of: pattern, options: .regularExpression) else {
+            return (0, 0)
+        }
+        
+        let components = tableString[match].split(separator: ".")
+        let tableNum = Int(components[0]) ?? 0
+        let splitIndex = components.count > 1 ? Int(components[1]) ?? 0 : 0
+        return (tableNum, splitIndex)
+    }
     
     @State private var errorAlert: Bool = false
     @State private var itemsPresentAlert: Bool = false
@@ -25,7 +39,7 @@ struct SelectionView: View {
     
     var body: some View {
         TabView(selection: $activeTab){
-            OpenTablesView(session: session).tag(0)
+            OpenTablesView().tag(0)
             selectionView.tag(1)
             PaymentListView(payments: payments).tag(2)
         }
@@ -39,7 +53,7 @@ struct SelectionView: View {
                 .font(.custom("Roboto-Regular", size: 16))
                 .foregroundStyle(Color.background[100])
                 .padding(.top, 8)
-            Text(tableNum.rawTable.isEmpty ? "\u{00A0}" : tableNum.rawTable)
+            Text(tableString.isEmpty ? "\u{00A0}" : tableString)
                 .padding(.vertical, 30)
                 .font(.custom("Roboto-BoldItalic", size: 76))
                 .foregroundStyle(Color.background[100])
@@ -49,24 +63,30 @@ struct SelectionView: View {
                             
             InputKeypad(
                 input: Binding(
-                    get: { tableNum.rawTable },
-                    set: { tableNum.rawTable = $0 }
+                    get: { tableString },
+                    set: { tableString = $0 }
                 ),
                 inputValidation: { input in
-                    return TableInfo.validTableInput(tableString: input)
+                    let pattern = #"^(?!\.)(\d{0,4})(?:\.(\d?))?$"#
+                    return input.range(of: pattern, options: .regularExpression) != nil
                 }
             ).padding(.vertical, 20)
                    
             
-            if session.currentTable == nil {
+            if true {
+                // MARK: - Table Button
                 PrimaryFilledButton(action: {
                     Task {
-                        if tableNum.table != 0 {
-                            session.checkSubTable(table: tableNum, nextState: .openTable)
+                        print(tableInfo)
+                        if tableInfo.0 != 0 {
+                            if let table = store.tables.findTable(using: store, tableNum: tableInfo.0) {
+                                router.navigate(to: .order(tableID: table.id, subTableIndex: tableInfo.1))
+                            }else {
+                                router.activeError = .unknown(err: "Table doesn't exist")
+                            }
                         }else {
-                            session.startTableMap(nextState: .openTable)
+                            //session.startTableMap(nextState: .openTable)
                         }
-                        tableNum.rawTable = ""
                     }
                 }) {
                     HStack(alignment: .center){
@@ -76,12 +96,12 @@ struct SelectionView: View {
                     }
                 }
                 
+                
                 HStack {
+                    // MARK: - Payment Button
                     Button(action: {
-                        if tableNum.table != 0 {
-                            session.startPayment(table: tableNum)
+                        if tableInfo.0 != 0 {
                         } else {
-                            session.startTableMap(nextState: .payTable)
                         }
                     }) {
                         HStack{
@@ -101,15 +121,10 @@ struct SelectionView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 12))
                         .padding(.trailing, 8)
                     }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                            session.startTableSearch()
-                        }
-                    )
                     
+                    // MARK: - Move Button
                     Button(action: {
-                        session.checkSubTable(table: tableNum, nextState: .moveTable)
-                        tableNum.rawTable = ""
+                        //session.checkSubTable(table: tableNum, nextState: .moveTable)
                     }) {
                         HStack{
                             Image(systemName: "arrow.right.arrow.left")
@@ -129,17 +144,19 @@ struct SelectionView: View {
                         .padding(.leading, 8)
                     }
                 }
-            } else {
+            }
+            // TODO: Fix moving table
+            /*else {
                 PrimaryFilledButton(action: {
                     Task {
                         if tableNum.rawTable == "" { return }
                         
-                        print ("Current table items: \(session.currentTableItems.count)")
-                        if session.currentTableItems.count > 0 {
-                            session.checkSubTable(table: tableNum, nextState: .splitTable)
-                        } else {
-                            session.checkSubTable(table: tableNum, nextState: .moveTable)
-                        }
+//                        print ("Current table items: \(session.currentTableItems.count)")
+//                        if session.currentTableItems.count > 0 {
+//                            session.checkSubTable(table: tableNum, nextState: .splitTable)
+//                        } else {
+//                            session.checkSubTable(table: tableNum, nextState: .moveTable)
+//                        }
                         tableNum.rawTable = ""
                     }
                 }) {
@@ -151,8 +168,10 @@ struct SelectionView: View {
                 }.opacity(tableNum.rawTable == "" ? 0.5 : 1)
                 
                 BlankOutlineButton(action: {
-                    session.closeTable()
-                    tableNum.rawTable = ""
+                    Task {
+                        try? await NetworkService.shared.unlockTable(tableId: <#T##String#>, subTable: <#T##Int#>)
+                        router.navigate(to: .main)
+                    }
                 }) {
                     HStack(alignment: .center){
                         Image(systemName: "xmark")
@@ -160,11 +179,11 @@ struct SelectionView: View {
                             .font(.custom("Roboto-Bold", size: 24))
                     }
                 }
-            }
+            }*/
             
         }
         .padding()
-        .popup(item: $session.requestMoveConformation) { item in
+        .popup(item: $router.requestMoveConformation) { item in
             VStack{
                 Text("Tafel verplaatsen?")
                     .font(.custom("Roboto-Bold", size: 24))
@@ -172,15 +191,16 @@ struct SelectionView: View {
                     .font(.custom("Roboto-Regular", size: 16))
                     
                 HStack{
-                    BlankOutlineButton(action: {session.requestMoveConformation = nil}) {
+                    BlankOutlineButton(action: {router.requestMoveConformation = nil}) {
                         Text("Annuleren")
                     }
                     PrimaryFilledButton(action: {
-                        if session.currentTableItems.isEmpty {
-                            session.finishMoveTable(newTable: item)
-                        } else {
-                            session.finishSplitTable(newTable: item)
-                        }
+                        // TODO: fix splitting tables -
+//                        if .currentTableItems.isEmpty {
+//                            session.finishMoveTable(newTable: item)
+//                        } else {
+//                            session.finishSplitTable(newTable: item)
+//                        }
                     }) {
                         Text("Bevestigen")
                     }
@@ -188,20 +208,6 @@ struct SelectionView: View {
             }
             .padding()
         }
-    }
-    
-    
-    func addTableNum(_ symbol: String) {
-        if tableNum.rawTable.contains(".") {
-            if symbol == "." { return } // Already a dot in the string
-            if tableNum.rawTable.firstIndex(of: ".").map({ $0 != tableNum.rawTable.index(before: tableNum.rawTable.endIndex) }) ?? true { return } // Only one character after dot
-        } else if tableNum.rawTable.count > 3 && symbol != "." { // Only 4 symbols before dot
-            return
-        } else if symbol == "." && tableNum.rawTable.count == 0 { // Can't start with dot
-            return
-        }
-        
-        tableNum.rawTable += symbol
     }
 }
 
@@ -341,7 +347,11 @@ struct PaymentListView: View {
 }
 
 struct OpenTablesView: View {
-    @ObservedObject var session: SessionManager
+    @EnvironmentObject var router: AppRouter
+    @EnvironmentObject var store: RestaurantStore
+    
+    @State private var openTables: [Components.Schemas.TableSearchResult] = []
+        
     
     var body: some View {
         VStack{
@@ -352,11 +362,11 @@ struct OpenTablesView: View {
                     .padding()
             }
             ScrollView {
-                ForEach(session.openTables, id: \.id) { table in
+                ForEach(openTables, id: \.id) { table in
                     HStack {
                         VStack{
                             HStack{
-                                Text("Tafel \(table.tableInfo.formatTableRaw)")
+                                Text(table.resolvedTable(in: store)?.label ?? "Tafel")
                                     .font(.custom("Roboto-Bold", size: 18))
                                     .foregroundStyle(Color.background[100])
                             }
@@ -364,22 +374,23 @@ struct OpenTablesView: View {
                                 Image(systemName: "clock")
                                     .font(.system(size: 14)) // keep icon size consistent
                                     .foregroundStyle(Color.background[400])
-                                Text(table.time)
+                                Text(table.edited_at, style: .time)
                                     .foregroundStyle(Color.background[400])
                                     .font(.custom("Roboto-Regular", size: 14))
                             }
                         }
                         
                         Spacer()
-                        if table.comment != "" {
-                            Text(table.comment)
-                                .font(.custom("Roboto-Bold", size: 16))
-                                .foregroundStyle(Color.primary[500])
-                                
+                        
+                        if table.locked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Color.danger[500])
                         }
+                        
                         Spacer()
                         
-                        Text(table.balance.formatted(.currency(code: "EUR")))
+                        Text(table.total_price.formatted(.currency(code: "EUR")))
                             .font(.custom("Roboto-Bold", size: 18))
                             .foregroundStyle(Color.background[100])
                     }
@@ -387,7 +398,7 @@ struct OpenTablesView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .onTapGesture {
-                        session.enterTable(table: table.tableInfo)
+                        router.navigate(to: .order(tableID: table.id, subTableIndex: table.sub_table))
                     }
                     Divider()
                         .padding(.horizontal, 16)
@@ -397,7 +408,11 @@ struct OpenTablesView: View {
             }
         }
         .onAppear {
-            session.getOpenTables()
+            Task {
+                if let tables = try? await NetworkService.shared.getOpenTables() {
+                    self.openTables = tables
+                }
+            }
         }
     }
 }

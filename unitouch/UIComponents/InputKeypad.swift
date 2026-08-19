@@ -80,9 +80,3 @@ struct InputKeypad: View {
         }
     }
 }
-
-#Preview {
-    InputKeypad(input: .constant(""), inputValidation: { input in
-        return TableInfo.validTableInput(tableString: input)
-    })
-}

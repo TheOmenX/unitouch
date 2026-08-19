@@ -7,61 +7,72 @@
 
 import SwiftUI
 
-fileprivate struct LookupItems: Identifiable {
-    let id = UUID()
-    let lookupId: Int
-    var items: [UnitouchProduct]
-}
-
 enum TableTab {
     case selection, overview, search
 }
 
 struct TableView: View {
-    @ObservedObject var session: SessionManager
+    @EnvironmentObject var router: AppRouter
+    @EnvironmentObject var store: RestaurantStore
     
-    @Binding var newItems: [NewItem]
-    @Binding var deletedItems: [NewItem]
+    var tableID: String
+    var subTableIndex: Int
+    var activeTable: Components.Schemas.RestaurantTable {
+        return store.tables.first(where: { $0.id == tableID })!
+    }
     
+    @State var activeOrderItems: [Components.Schemas.OrderItem] = []
+    @State var activeOrderID: String? = nil
+    @State private var promptGuestCount: Bool = false
+    @State private var guestCountStr: String = ""
+    
+    //MARK: - Active Items
+    @State private var newItems: [Components.Schemas.OrderItem] = []
+    @State private var deletedItems: [String] = [] // UUIDs
+    
+    //MARK: - Table Search Switch
     var searchMode: Bool = false
     
-    @State private var lookupItems: LookupItems? = nil
+    //MARK: - Lookup Variables
+    @State private var activeLookup: Components.Schemas.Lookup? = nil
     
-    @State private var menu: UnitouchMenu? = nil
-    @State private var selectedStep: Int = 1
-    @State private var selectedChoices: [Int: UnitouchProduct] = [:]
+    //MARK: - Menu Variables
+    @State private var menu: Components.Schemas.Menu? = nil
+    @State private var selectedStepID: String = ""
+    @State private var selectedChoices: [String: Components.Schemas.Item] = [:] // MenuStepID : ItemID
     
-    @State private var selectedId: Int = 1
-    @State private var itemSize: CGFloat = 0
+    //MARK: - Category ID
+    @State private var selectedId: String = ""
     
-    @State private var clickedItem: NewItem? = nil
+    //MARK: - Active Editing Item
+    @State private var clickedItem: Components.Schemas.OrderItem? = nil
     
-    @State private var addTextAlert: Bool = false;
-    @State private var textItemIndex: Int = -1;
+    //MARK: - Commenting on Items
+    @State private var commentAlert: Bool = false;
     @State private var message: String = ""
     
-    @State private var activeTab = TableTab.selection
-    
+    //MARK: - Animation Bullshit
     @State private var isPressed = false
     
-    @State private var numberOfPeople = ""
     
+    //MARK: - Navigation
+    @State private var activeTab = TableTab.selection
+    
+    // MARK: - Search Bar
     @State private var showSearch: Bool = false
     @State private var searchText: String = ""
     @FocusState private var searchFieldIsFocused: Bool
     
     var body: some View {
         VStack(spacing:0){
-            // tappable header
+            //MARK: - Search Bar
             VStack(spacing: 0) {
                 HStack {
                     Button(action: {
-                        // toggle dropdown (animated) and focus the search field when opened
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                             showSearch.toggle()
                         }
                         if showSearch {
-                            // delay to let animation start then focus
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 searchFieldIsFocused = true
                             }
@@ -71,7 +82,7 @@ struct TableView: View {
                         }
                     }) {
                         ZStack(alignment: .center) {
-                            Text(searchMode ? "Tafel Zoeken" : "Tafel \(session.currentTable?.formatTableRaw ?? "-")")
+                            Text(searchMode ? "Tafel Zoeken" : "Tafel \(activeTable.displayLabel(subTableIndex))")
                                 .font(.custom("Roboto-Bold", size: 18))
                                 .foregroundStyle(Color.primary[500])
                             HStack{
@@ -131,7 +142,7 @@ struct TableView: View {
             TabView(selection: $activeTab){
                 selectionView.tag(TableTab.selection)
                 if(searchMode) {
-                    searchView.tag(TableTab.search)
+                    //searchView.tag(TableTab.search)
                 } else {
                     overviewView.tag(TableTab.overview)
                 }
@@ -140,12 +151,22 @@ struct TableView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea(edges: .bottom)
         }
-        .popup(item: $clickedItem) { item in
-            let combinedItems = session.currentTableItems + newItems
-            let index = combinedItems.firstIndex(where: {$0.id == item.id}) ?? -1
-            let comments = Array(combinedItems.dropFirst(index + 1).prefix(while: { $0.comment }))
+        .task {
+            self.selectedId = self.store.categories.first?.id ?? ""
+            print(self.activeTable)
+            do {
+                let order = try await NetworkService.shared.getTableOrder(tableId: self.tableID, subTable: self.subTableIndex)
+                self.activeOrderItems = order.items
+                self.activeOrderID = order.order_id
+                self.promptGuestCount = order.guest_count == 0
                 
-            
+            } catch(let err) {
+                print(err.localizedDescription)
+                router.activeError = err as? UnitouchError
+            }
+        }
+        .popup(item: $clickedItem) { item in
+            let sub_items = item.sub_items ?? []
             VStack {
                 Text("Geselecteerd artikel:")
                     .font(.custom("Roboto-Regular", size: 18))
@@ -153,27 +174,27 @@ struct TableView: View {
                 HStack{
                     Text("\(item.quantity)x")
                         .font(.custom("Roboto-Bold", size: 24))
-                        .foregroundStyle( (newItems.contains(item) || deletedItems.contains(item)) ? Color.background[800] : Color.background[100])
+                        .foregroundStyle( (newItems.contains(item) || deletedItems.contains(item.id)) ? Color.background[800] : Color.background[100])
                         .frame(width: 48, height: 48)
-                        .background(newItems.contains(item) ? Color.primary[400] : (deletedItems.contains(item) ? Color.danger[400] : Color.background[900]))
+                        .background(newItems.contains(item) ? Color.primary[400] : (deletedItems.contains(item.id) ? Color.danger[400] : Color.background[900]))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                    Text(item.name)
+                    Text(item.item_name)
                         .font(.custom("Roboto-Bold", size: 36))
                         .padding()
                 }
-                ForEach(comments, id: \.id) { comment in
-                    let isBeingDeleted = deletedItems.contains(where: { $0.id == comment.id })
+                ForEach(sub_items, id: \.id) { sub_item in
+                    let isBeingDeleted = deletedItems.contains(where: { $0 == sub_item.id })
                     HStack{
                         Circle()
                             .foregroundStyle(Color.background[600])
                             .frame(width: 20, height: 20)
                             .overlay(
-                                Text("\(comment.quantity)")
+                                Text("\(sub_item.quantity)")
                                     .font(.custom("Roboto-Bold", size: 17))
                                     .foregroundStyle(Color.background[800])
                             )
                         
-                        Text(comment.name)
+                        Text(sub_item.item_name)
                             .font(.custom("Roboto-Italic", size: 20))
                             .foregroundStyle(Color.background[600])
                             .padding(.horizontal, 12)
@@ -188,14 +209,29 @@ struct TableView: View {
                         Image(systemName: isBeingDeleted ? "arrow.uturn.left" : "trash")
                             .foregroundStyle(isBeingDeleted ? .orange : Color.danger[500])
                             .onTapGesture {
-                                if deletedItems.contains(comment){
-                                    deletedItems.removeAll(where: { $0.id == comment.id })
-                                }else if newItems.contains(comment) {
-                                    newItems.removeAll(where: { $0.id == comment.id })
+                                if deletedItems.contains(sub_item.id){
+                                    deletedItems.removeAll(where: { $0 == sub_item.id })
+                                }else if newItems.contains(sub_item) {
+                                    newItems.removeAll(where: { $0.id == sub_item.id })
                                 } else {
-                                    deletedItems.append(comment)
+                                    deletedItems.append(sub_item.id)
                                 }
                             }
+                    }
+                }
+                ForEach(item.comments, id: \.self) { comment in
+                    HStack{
+                        Text(comment)
+                            .font(.custom("Roboto-Italic", size: 20))
+                            .foregroundStyle(Color.background[600])
+                            .padding(.horizontal, 12)
+//                            .overlay(
+//                                Divider()
+//                                    .frame(maxWidth: .infinity)
+//                                    .background(Color.danger[500])
+//                                    .padding(.vertical, 10)
+//                                    .opacity(isBeingDeleted ? 1 : 0)
+//                            )
                     }
                 }
                     
@@ -204,64 +240,38 @@ struct TableView: View {
                 
                 HStack{
                     BlankOutlineButton(action: {
-                        textItemIndex = (newItems.firstIndex(of: item) ?? -2)
-                        if(textItemIndex > -1) {addTextAlert = true}
+                        commentAlert = true
                     }) {
                         Text("Text")
                     }
                     BlankOutlineButton(action: {
-                        if deletedItems.contains(item){
-                            deletedItems.removeAll(where: { $0.id == item.id })
+                        // Remove items from order (or add them back when they are already set for removal)
+                        if deletedItems.contains(item.id){
+                            deletedItems.removeAll(where: { $0 == item.id })
                             
-                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-                                session.blockedItems[idx].count -= item.quantity
-                                session.addBlockedItem(plu: item.plu, count: -item.quantity)
-                            }
+//                            if let idx = blockedItems.firstIndex(where: {$0.item_id == item.item_id}) {
+//                                blockedItems[idx].amount -= item.quantity
+////                                TODO: fix locking of items
+//                                session.addBlockedItem(plu: item.plu, count: -item.quantity)
+//                            }
                         }else {
                             if(newItems.contains(item)){
-                                var start = -1;
-                                var end = -1
-                                for i in 0...(newItems.count-1) {
-                                    if (newItems[i] == item){
-                                        start = i
-                                        end = i+1
-                                    }else if (start != -1){
-                                        if (newItems[i].comment){
-                                            end = i+1
-                                        }else{
-                                            break
-                                        }
-                                    }
-                                }
-                                if(start != -1) {
-                                    newItems.removeSubrange(start..<end)
-                                    clickedItem = nil
-                                }
+                                newItems.removeAll { $0.id == item.id }
+                                clickedItem = nil
                             }else{
-                                var found = false
-                                for el in session.currentTableItems {
-                                    if (el == item){
-                                        deletedItems.append(el)
-                                        found = !el.comment
-                                    }else if (found){
-                                        if (el.comment){
-                                            deletedItems.append(el)
-                                        }else{
-                                            break
-                                        }
-                                    }
-                                }
+                                deletedItems.append(item.id)
                             }
                             
-                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-                                session.blockedItems[idx].count += item.quantity
-                                session.addBlockedItem(plu: item.plu, count: item.quantity)
-                            }
+//                        TODO: fix locking of items
+//                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
+//                                session.blockedItems[idx].count += item.quantity
+//                                session.addBlockedItem(plu: item.plu, count: item.quantity)
+//                            }
                         }
                         
                         clickedItem = nil
                     }) {
-                        Text(deletedItems.contains(item) ? "Toevoegen" : "Verwijderen")
+                        Text(deletedItems.contains(item.id) ? "Toevoegen" : "Verwijderen")
                     }
                 }
                 HStack{
@@ -273,101 +283,81 @@ struct TableView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 20)
         }
-        .popup(isPresented: $session.requestNumberOfPeople) {
+        .popup(isPresented: $promptGuestCount) {
             VStack{
                 Text("Aantal personen")
                     .font(.custom("Roboto-Bold", size: 18))
                     .foregroundStyle(Color.background[100])
                     .padding(.bottom, 10)
-                Text(numberOfPeople.isEmpty ? "\u{00A0}" : numberOfPeople)
+                Text(guestCountStr.isEmpty ? "\u{00A0}" : guestCountStr)
                     .font(.custom("Roboto-Bold", size: 36))
                     .padding(.bottom, 20)
                 Divider()
                     .frame(maxWidth: .infinity)
                     .background(Color.background[700])
                     .padding(.vertical, 10)
-                InputKeypad(input: $numberOfPeople, inputValidation: { input in
+                InputKeypad(input: $guestCountStr, inputValidation: { input in
                     if !input.contains("."), let count = Int(input), count > 0 && count <= 99 {
                         return true
                     } else { return false }
                 })
                 
                 PrimaryFilledButton(action: {
-                    session.setNumberOfPeople(count: Int(numberOfPeople) ?? 0)
+                    if (activeOrderID != nil) {
+                        Task {
+                            do {
+                                try await NetworkService.shared.setGuestCount(tableID: self.tableID, subTable: self.subTableIndex,payload: Components.Schemas.SetGuestCountRequest(guest_count: Int(guestCountStr) ?? 0) )
+                                self.promptGuestCount = false
+                            } catch(let err){
+                                print(err)
+                                router.activeError = .unknown(err: "Could not set guest count")
+                            }
+                        }
+                    }
                 }) {
                     Text("Ok")
                 }
             }
                 .padding()
         }
-        .alert("Geef bericht in", isPresented: $addTextAlert, actions: {
+        .alert("Geef bericht in", isPresented: $commentAlert, actions: {
             TextField("Bericht", text: $message)
             Button("Ok", action: {
-                let textChunks = chunkText(message)
-                for chunk in textChunks.reversed() {
-                    newItems.insert(NewItem(
-                        user: session.currentUser?.id ?? 0,
-                        plu: 1999,
-                        name: chunk,
-                        quantity: 1,
-                        rang: 1,
-                        unk1: "F",
-                        price: 0,
-                        comment: true),
-                                    at: textItemIndex+1 )
+                guard !message.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        
+                // 1. Find the index in the actual state array
+                if let targetId = clickedItem?.id,
+                   let index = newItems.firstIndex(where: { $0.id == targetId }) {
+                    // 2. Mutate the real array element directly
+                    newItems[index].comments.append(message)
+                    
+                    // 3. Keep the popup preview in sync if it is still open
+                    clickedItem = newItems[index]
                 }
+                
                 message = ""
             })
             Button("Annuleren", role: .cancel, action: {})
         })
     }
     
-    private func dedupProducts(_ items: [UnitouchProduct]) -> [UnitouchProduct] {
-        var seen = Set<Int>()
-        return items.filter { seen.insert($0.plu).inserted }
-    }
-    
-    // Centralized tap handler
-    private func handleItemTap(item: UnitouchProduct) {
-        if let idx = session.blockedItems.firstIndex(where: {$0.plu == item.plu}) {
-            if session.blockedItems[idx].count > 0 {
-                session.blockedItems[idx].count -= 1
-                session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
-                    createNewItem(item: item)
-                }
-            } else {
-                session.activeError = .itemBlocked
-            }
-        } else {
-            createNewItem(item: item)
-        }
-    }
-    
     var selectionView: some View {
         VStack(spacing: 0){
             HStack(spacing: 0){
                 if searchText.isEmpty {
-                    CategoryBarView(categories: session.backendData.categories, selectedId: $selectedId)
+                    CategoryBarView(categories: store.categories, selectedId: $selectedId)
                     Divider()
                         .frame(maxHeight: .infinity)
                         .foregroundStyle(Color.background[700])
                     
-                    ItemBarView(
-                        items: session.backendData.items,
-                        selectedCategoryId: selectedId,
-                        session: session
-                    ) { selectedItem in
+                    ItemBarView(items: store.items(forCategory: selectedId)) { selectedItem in
                         handleItemTap(item: selectedItem)
                     }
                 } else {
                     ScrollView {
                         VStack {
-                            ForEach(dedupProducts(session.backendData.items
-                                .filter { (it: UnitouchProduct) in it.name.lowercased().contains(searchText.lowercased().trimmingCharacters(in: .whitespaces)) }),
-                                    id: \.self
-                            ) { item in
-                                let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
-                                ItemRowView(item: item, blockedCount: blockedCount) {
+                            ForEach(store.items, id: \.id) { item in
+                                ItemRowView(item: item, blockedCount: -1) {
                                     handleItemTap(item: item)
                                 }
                             }
@@ -383,9 +373,9 @@ struct TableView: View {
             VStack{
                 HStack {
                     ZStack {
-                        if (!newItems.isEmpty && newItems.last?.plu != 1999) {
+                        if (!newItems.isEmpty) {
                             HStack {
-                                Text(newItems.last?.name ?? "\u{00A0}")
+                                Text(newItems.last?.item_name ?? "\u{00A0}")
                                     .foregroundColor(.white)
                                     .font(.custom("Roboto-Bold", size: 24))
                                 Spacer()
@@ -428,13 +418,13 @@ struct TableView: View {
                     }
                     
                     Button(action: {
-                        if let last = newItems.last, last.plu != 1999 {
+                        if let last = newItems.last {
                             newItems.removeLast()
-                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == last.plu}) {
-                                session.blockedItems[idx].count += last.quantity
-                                session.addBlockedItem(plu: last.plu, count: last.quantity)
-                                
-                            }
+//                            TODO: FIX blocked items
+//                            if let idx = session.blockedItems.firstIndex(where: {$0.plu == last.plu}) {
+//                                session.blockedItems[idx].count += last.quantity
+//                                session.addBlockedItem(plu: last.plu, count: last.quantity)
+//                            }
                         }
                     }) {
                         ZStack {
@@ -448,23 +438,18 @@ struct TableView: View {
                 }
                 if searchMode {
                     PrimaryFilledButton(action: {
-                        session.searchTables(items: newItems)
-                        activeTab = .search
+                        //session.searchTables(items: newItems)
+                        //activeTab = .search
                     }) {
                         Text("TAFEL ZOEKEN")
                     }
                 } else {
-                    Button(action: {
-                        session.finishTable(newItems: newItems, deletedItems: deletedItems)
+                    PrimaryFilledButton(action: {
+                        Task {
+                            await finalizeOrder()
+                        }
                     }) {
                         Text("EINDE BESTELLING")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 20)
-                            .background(Color.primary[500])
-                            .foregroundColor(.black)
-                            .cornerRadius(15)
-                            .font(.custom("Roboto-Bold", size: 20))
-                            .shadow(color: Color.primary[500].opacity(0.5), radius: 5, x: 0, y: 0)
                     }
                 }
             }
@@ -475,11 +460,12 @@ struct TableView: View {
             
         }
         .ignoresSafeArea(edges: .bottom)
-        .sheet(item: $lookupItems) { data in
+        // MARK: - LOOKUP POPUP
+        .sheet(item: $activeLookup) { lookup in
             VStack {
                 List(
-                    data.items
-                        .sorted(by: { (a: UnitouchProduct, b: UnitouchProduct) -> Bool in a.unk3 < b.unk3 }),
+                    lookup.resolvedItems(using: store),
+                    // TODO:    .sorted(by: { (a: Components.Schema.Item, b: Components.Schema.Item) -> Bool in a. < b.unk3 }),
                     id: \.self
                 ) { item in
                     Text(item.name)
@@ -490,85 +476,38 @@ struct TableView: View {
                         .listRowInsets(EdgeInsets())
                         .onTapGesture {
                             createNewItem(item: item)
-                            lookupItems = nil
+                            activeLookup = nil
                         }
                 }
                 .listStyle(.plain)
                 .padding(.top, 24)
             }
         }
-        .popup(item: $menu) { data in
+        // MARK: - MENU POPUP
+        .popup(item: $menu) { menu in
             HStack {
                 VStack {
-                    List(data.steps.sorted(by: { $0.key < $1.key }), id: \.key) { item in
-                        Text("Rang \(item.key)")
+                    List((menu.steps.sorted(by: { $0.sort_order < $1.sort_order })), id: \.id) { step in
+                        Text(step.name)
                             .font(.custom("Roboto-Bold", size: 20))
-                            .listRowBackground(selectedStep == item.key ? Color.primary[600] : (selectedChoices[item.key] != nil ? Color.primary[800] : Color.background[900]))
+                            .listRowBackground(selectedStepID == step.id ? Color.primary[600] : (selectedChoices[step.id] != nil ? Color.primary[800] : Color.background[900]))
                             .onTapGesture {
-                                selectedStep = item.key
+                                selectedStepID = step.id
                             }
                     }
                     .scrollContentBackground(.hidden)
                 }
                 VStack {
-                    List(data.steps[selectedStep]?.sorted() ?? [], id: \.self) { plu in
-                        if let product = session.backendData.items.first(where: { $0.plu == plu }) {
-                            Text(product.name)
-                                .listRowBackground(selectedChoices[selectedStep]?.plu == product.plu ? Color.primary[600] : Color.background[900])
-                                .onTapGesture {
-                                    selectedChoices[selectedStep] = product
-                                    
-                                    if selectedChoices.count == data.steps.count {
-                                        for step in data.steps.keys.sorted() {
-                                            if let choice = selectedChoices[step] {
-                                                createNewItem(item: choice)
-                                            }
-                                        }
-                                        
-                                        self.menu = nil
-                                        self.selectedStep = 1
-                                        self.selectedChoices = [:]
-                                    }
-                                }
-                        }
+                    List(menu.steps.first { $0.id == selectedStepID}?.resolvedItems(using: store) ?? []) { item in
+                        Text(item.name)
+                            .listRowBackground(selectedChoices[selectedStepID] == item ? Color.primary[600] : Color.background[900])
+                            .onTapGesture {
+                                selectedChoices[selectedStepID] = item
+                            }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
-        }
-    }
-    
-    func createNewItem(item: UnitouchProduct) {
-        if !newItems.isEmpty && newItems.last?.plu == item.plu {
-            newItems[newItems.count - 1].quantity += 1
-        }else {
-            newItems.append(NewItem(
-                user: session.currentUser?.id ?? 1,
-                plu: item.plu,
-                name: item.name,
-                quantity: 1,
-                rang: item.rang,
-                unk1: "F",
-                price: Int(item.price*100),
-                comment: item.followPrevious
-            ) )
-        }
-        
-        if item.lookup > 0, let lookupItem = session.backendData.lookups.first(where: {$0.id == item.lookup}) {
-            self.lookupItems = LookupItems(lookupId: item.lookup, items: [])
-            
-            for plu in lookupItem.items.sorted() {
-                if let product = session.backendData.items.first(where: {$0.plu == plu}) {
-                    self.lookupItems?.items.append(product)
-                }
-            }
-        }
-        
-        if let menu = session.backendData.menus.first(where: { $0.item == item.plu }) {
-            print(menu.steps)
-            self.menu = menu
-            self.selectedId = 1
-            self.selectedChoices = [:]
         }
     }
     
@@ -576,11 +515,11 @@ struct TableView: View {
         VStack{
             ScrollView {
                 VStack{
-                    let combinedItems = session.currentTableItems + newItems
-                    ForEach(combinedItems.indices, id: \.self) { index in
-                        itemContainer(items: combinedItems, index: index)
+                    let combinedItems = activeOrderItems + newItems
+                    ForEach(combinedItems, id: \.self) { item in
+                        itemContainer(item: item)
                         .onTapGesture {
-                            clickedItem = combinedItems[index]
+                            clickedItem = item
                         }
                     }
                 }
@@ -606,11 +545,9 @@ struct TableView: View {
                             .font(.custom("Roboto-Bold", size: 16))
                     }
                     BlankOutlineButton(action: {
-                        session.finishTable(newItems: newItems, deletedItems: deletedItems, closeTable: false)
-                        
-                        session.currentTableItems = []
-                        
-                        session.state = .main
+                        Task {
+                            // TODO: define move behavior
+                        }
                     }) {
                         Text("Verplaatsen")
                             .font(.custom("Roboto-Bold", size: 16))
@@ -618,22 +555,17 @@ struct TableView: View {
                 }
                 HStack{
                     BlankOutlineButton(action: {
-                        session.finishTable(newItems: newItems, deletedItems: deletedItems, closeTable: false)
-                        
-                        session.state = .splitTable
+                        Task {
+                            // TODO: define split behavior
+                        }
                     }) {
                         Text("Split")
                             .font(.custom("Roboto-Bold", size: 16))
                     }
                     BlankOutlineButton(action: {
-                        session.finishTable(newItems: newItems, deletedItems: deletedItems, closeTable: false)
-                        session.currentTableItems = []
-                        if let currentTable = session.currentTable {
-                            session.startPayment(table: currentTable)
-                        } else {
-                            session.closeTable()
+                        Task {
+                            // TODO: define pay behavior
                         }
-                        
                     }) {
                         Text("Betalen")
                             .font(.custom("Roboto-Bold", size: 16))
@@ -641,7 +573,9 @@ struct TableView: View {
                 }
 
                 PrimaryFilledButton(action: {
-                    session.finishTable(newItems: newItems, deletedItems: deletedItems)
+                    Task {
+                        await finalizeOrder()
+                    }
                 }) {
                     Text("EINDE BESTELLING")
                 }
@@ -650,15 +584,16 @@ struct TableView: View {
         }
     }
     
+    /*
     var searchView: some View {
         VStack{
             ScrollView {
                 VStack{
                     let combinedItems = session.currentTableItems + newItems
-                    ForEach(combinedItems.indices, id: \.self) { index in
-                        itemContainer(items: combinedItems, index: index)
+                    ForEach(combinedItems, id: \.self) { item in
+                        itemContainer(item: item)
                             .onTapGesture {
-                                clickedItem = combinedItems[index]
+                                clickedItem = item
                             }
                     }
                 }
@@ -677,11 +612,11 @@ struct TableView: View {
                 .background(Color.background[700])
             
             ScrollView {
-                ForEach(session.openTables.filter { !$0.locked }) { table in
+                ForEach(session.openTables) { table in
                     HStack {
                         VStack{
                             HStack{
-                                Text("Tafel \(table.tableInfo.formatTableRaw)")
+                                Text(table.displayLabel)
                                     .font(.custom("Roboto-Bold", size: 18))
                                     .foregroundStyle(Color.background[100])
                             }
@@ -689,114 +624,168 @@ struct TableView: View {
                                 Image(systemName: "clock")
                                     .font(.system(size: 14)) // keep icon size consistent
                                     .foregroundStyle(Color.background[400])
-                                Text(table.time)
-                                    .foregroundStyle(Color.background[400])
-                                    .font(.custom("Roboto-Regular", size: 14))
+//                                Text(table.time)
+//                                    .foregroundStyle(Color.background[400])
+//                                    .font(.custom("Roboto-Regular", size: 14))
                             }
                         }
                         
                         Spacer()
-                        if table.comment != "" {
-                            Text(table.comment)
-                                .font(.custom("Roboto-Bold", size: 16))
-                                .foregroundStyle(Color.primary[500])
-                                
-                        }
-                        Spacer()
                         
-                        Text(table.balance.formatted(.currency(code: "EUR")))
-                            .font(.custom("Roboto-Bold", size: 18))
-                            .foregroundStyle(Color.background[100])
+//                        Text(table.balance.formatted(.currency(code: "EUR")))
+//                            .font(.custom("Roboto-Bold", size: 18))
+//                            .foregroundStyle(Color.background[100])
                     }
                     .contentShape(Rectangle())
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .onTapGesture {
-                        session.enterTable(table: table.tableInfo, clearItems: true)
+                        Task {
+                            await session.enterTable(tableId: table.physicalTable.id, subTable: table.subTableIndex)
+                        }
                     }
                     Divider()
                         .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity)
                 }
-            }
             
-            
-            
-            // 1. Filter de geblokkeerde tafels en maak er een komma-gescheiden string van
-            let lockedTablesString = session.openTables
-                .filter { $0.locked == true }
-                .map { String($0.tableInfo.formatTableRaw) }
-                .joined(separator: ", ")
-
-            if !lockedTablesString.isEmpty {
-                Text("*Tafels in gebruik: \(lockedTablesString)")
-                    .padding(.horizontal)
-                    .font(.custom("Roboto-Bold", size: 16))
-                    .foregroundStyle(Color.background[400])
-            }
             
             BlankOutlineButton(action: {
-                session.newItems = []
-                session.openTables = []
-                session.resetState()
+                    //TODO: define exit behavior
             }) {
                 Text("ANNULEREN")
             }.padding(.horizontal)
         }
     }
+    // */
     
     @ViewBuilder
-    func itemContainer(items: [NewItem], index: Int) -> some View {
-        let item = items[index]
-        let nextItem = items.indices.contains(index+1) ? items[index+1] : nil
-        let isComment = item.comment
-        let nextIsComment = nextItem?.comment ?? false
+    func itemContainer(item: Components.Schemas.OrderItem) -> some View {
         let isNewItem = newItems.contains(where: { $0.id == item.id })
-        let isDeletedItem = deletedItems.contains(where: { $0.id == item.id })
+        let isDeletedItem = deletedItems.contains(where: { $0 == item.id })
         
-        if isComment {
+        
+        HStack {
+            Text("\(item.quantity)x")
+                .font(.custom("Roboto-Bold", size: 18))
+                .foregroundStyle( (isNewItem || isDeletedItem) ? Color.background[800] : Color.background[100])
+                .frame(width: 36, height: 36)
+                .background(isNewItem ? Color.primary[400] : (isDeletedItem ? Color.danger[400] : Color.background[900]))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Text(item.item_name)
+                .font(.custom("Roboto-Bold", size: 18))
+                .foregroundStyle(Color.background[100])
+            
+            Spacer()
+            Text((Double(item.quantity) * item.unit_price).formatted(.currency(code: "EUR")))
+                .foregroundStyle(Color.background[100])
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+        
+        ForEach(item.sub_items ?? []) { subItem in
             HStack{
                 Spacer().frame(width: 48)
-                Text(item.name)
+                Text(subItem.item_name)
                     .font(.custom("Roboto-Italic", size: 13))
                     .foregroundStyle(Color.background[600])
                 Spacer()
-                if(item.price != 0) {
-                    Text((Double(item.quantity * item.price)/100).formatted(.currency(code: "EUR")))
+                if(subItem.unit_price != 0) {
+                    Text((Double(subItem.quantity) * subItem.unit_price).formatted(.currency(code: "EUR")))
                         .font(.custom("Roboto-Italic", size: 13))
                         .foregroundStyle(Color.background[600])
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.bottom, nextIsComment ? 2 : 10)
-        } else {
-            HStack {
-                Text("\(item.quantity)x")
-                    .font(.custom("Roboto-Bold", size: 18))
-                    .foregroundStyle( (isNewItem || isDeletedItem) ? Color.background[800] : Color.background[100])
-                    .frame(width: 36, height: 36)
-                    .background(isNewItem ? Color.primary[400] : (isDeletedItem ? Color.danger[400] : Color.background[900]))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                Text(item.name)
-                    .font(.custom("Roboto-Bold", size: 18))
-                    .foregroundStyle(Color.background[100])
-                
+            .padding(.bottom, 2)
+        }
+        ForEach(item.comments, id: \.self) { comment in
+            HStack{
+                Spacer().frame(width: 48)
+                Text(comment)
+                    .font(.custom("Roboto-Italic", size: 13))
+                    .foregroundStyle(Color.background[600])
                 Spacer()
-                Text((Double(item.quantity * item.price)/100).formatted(.currency(code: "EUR")))
-                    .foregroundStyle(Color.background[100])
             }
             .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, nextIsComment ? 2 : 10)
+            .padding(.bottom, 2)
+            
         }
-        if !nextIsComment {
-            Divider()
-                .frame(maxWidth: .infinity)
-                .background(Color.background[700])
+
+        Divider()
+            .frame(maxWidth: .infinity)
+            .background(Color.background[700])
+            .padding(.top, 8)
+        
+    }
+    
+    
+    // MARK: - Logical functions
+    private func handleItemTap(item: Components.Schemas.Item) {
+        createNewItem(item: item)
+        
+////      TODO: fix
+//        if let idx = session.blockedItems.firstIndex(where: {$0.item_id == item.id}) {
+//            if session.blockedItems[idx].amount > 0 {
+//                session.blockedItems[idx].amount -= 1
+////                session.addBlockedItem(plu: session.blockedItems[idx].plu, count: -1){
+////                    createNewItem(item: item)
+////                }
+//            } else {
+//                session.activeError = .itemBlocked
+//            }
+//        } else {
+//            createNewItem(item: item)
+//        }
+    }
+    
+    func createNewItem(item: Components.Schemas.Item) {
+        if !newItems.isEmpty && newItems.last?.item_id == item.id {
+            newItems[newItems.count - 1].quantity += 1
+        } else {
+            newItems.append(Components.Schemas.OrderItem(
+                id: UUID().uuidString,
+                item_id: item.id,
+                item_name: item.name,
+                unit_price: item.price,
+                discount_amount: 0.0,
+                vat_rate: item.vat_rate,
+                quantity: 1,
+                comments: [],
+                sort_order: (newItems.last?.sort_order ?? -1) + 1,
+                created_at: Date(),
+                created_by: router.currentUser?.id ?? ""
+            ))
+        }
+        
+        self.activeLookup = item.resolvedLookup(in: store) ?? nil
+        
+        if let menu = item.resolvedMenu(in: store) {
+            self.menu = menu
+            self.selectedId = ""
+            self.selectedChoices = [:]
+        }
+    }
+    
+    func finalizeOrder() async {
+        do {
+            try await NetworkService.shared.updateTable(
+                tableId: self.tableID,
+                subTable: self.subTableIndex,
+                payload: Components.Schemas.TableUpdateRequest(
+                    add: newItems,
+                    remove: deletedItems
+                )
+            )
+            router.navigate(to: .main)
+        } catch {
+            router.activeError = .unknown(err: "Could not update items on table")
         }
     }
 }
 
+     
 /*----------------------------------------------\
 |                                               |
 |           Extracted Modular Views             |
@@ -804,25 +793,14 @@ struct TableView: View {
 \----------------------------------------------*/
 
 struct ItemBarView: View {
-    var items: [UnitouchProduct]
-    var selectedCategoryId: Int
-    @ObservedObject var session: SessionManager
-    
-    // The parent view will define what happens when an item is selected
-    var onItemSelected: (UnitouchProduct) -> Void
+    var items: [Components.Schemas.Item]
+    var onItemSelected: (Components.Schemas.Item) -> Void
     
     var body: some View {
         ScrollView {
             VStack {
-                ForEach(
-                    items
-                        .sorted(by: { $0.unk3 < $1.unk3 })
-                        .filter { $0.page == selectedCategoryId },
-                    id: \.self
-                ) { item in
-                    let blockedCount = session.blockedItems.first(where: { $0.plu == item.plu })?.count ?? -1
-                    
-                    ItemRowView(item: item, blockedCount: blockedCount) {
+                ForEach(items, id: \.id) { item in
+                    ItemRowView(item: item, blockedCount: -1) {
                         onItemSelected(item)
                     }
                 }
@@ -834,7 +812,7 @@ struct ItemBarView: View {
 }
 
 struct ItemRowView: View {
-    let item: UnitouchProduct
+    let item: Components.Schemas.Item
     let blockedCount: Int
     let action: () -> Void
     
@@ -844,7 +822,7 @@ struct ItemRowView: View {
         }) {
             HStack{
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color(rgbInteger: item.color))
+                    .fill(Color(hex: item.categories.first?.color ?? "#FFFFFF"))
                     .frame(width: 6)
                     .frame(maxHeight: .infinity)
                 Text(item.name)
@@ -879,8 +857,8 @@ struct ItemRowView: View {
 }
 
 struct CategoryBarView: View {
-    var categories: [UnitouchCategory]
-    @Binding var selectedId: Int
+    var categories: [Components.Schemas.Category]
+    @Binding var selectedId: String
 
     var body: some View {
         ScrollView {
@@ -898,7 +876,7 @@ struct CategoryBarView: View {
         .scrollIndicators(.hidden)
     }
 
-    func categoryContainer(category: UnitouchCategory) -> some View {
+    func categoryContainer(category: Components.Schemas.Category) -> some View {
         HStack{
             Text(category.name.uppercased())
                 .font(.custom("Roboto-Bold", size: 20))
@@ -915,65 +893,22 @@ struct CategoryBarView: View {
     }
 }
 
-func chunkText(_ text: String, maxLength: Int = 20) -> [String] {
-    var result: [String] = []
-    
-    // Convert to Substring for zero-allocation slicing
-    var remainingText = text[...]
-    
-    while !remainingText.isEmpty {
-        // 1. Drop leading whitespace for the current line
-        remainingText = remainingText.drop(while: { $0.isWhitespace })
-        if remainingText.isEmpty { break }
-        
-        // 2. If the remaining text fits entirely, take it all and finish
-        if remainingText.count <= maxLength {
-            result.append(String(remainingText))
-            break
-        }
-        
-        // 3. Look at the maximum allowed characters for this line
-        let prefix = remainingText.prefix(maxLength)
-        
-        // 4. Find the last space within this limit to avoid breaking words
-        if let lastSpaceIndex = prefix.lastIndex(where: { $0.isWhitespace }) {
-            
-            // Extract the chunk up to the space
-            let chunk = remainingText[remainingText.startIndex..<lastSpaceIndex]
-            result.append(String(chunk))
-            
-            // Move the pointer past the space for the next iteration
-            remainingText = remainingText[remainingText.index(after: lastSpaceIndex)...]
-            
-        } else {
-            // 5. THE EDGE CASE: No space found within the 19 characters.
-            // We must perform a hard split.
-            let chunk = remainingText.prefix(maxLength-1)
-            result.append(String(chunk))
-            
-            // Move the pointer exactly 19 characters forward
-            remainingText = remainingText.dropFirst(maxLength-1)
-        }
-    }
-    
-    return result
-}
-
 #Preview {
-    @Previewable @State var selectedId = 1
+    @Previewable @State var selectedId = UUID().uuidString
+    
     
     CategoryBarView(categories: [
-        UnitouchCategory(id: 1, name: "hard lopers"),
-        UnitouchCategory(id: 2, name: "warme dranken"),
-        UnitouchCategory(id: 3, name: "gebak"),
-        UnitouchCategory(id: 4, name: "fris dranken"),
-        UnitouchCategory(id: 5, name: "bieren"),
-        UnitouchCategory(id: 6, name: "wijnen"),
-        UnitouchCategory(id: 7, name: "borrel happen"),
-        UnitouchCategory(id: 8, name: "broodjes"),
-        UnitouchCategory(id: 9, name: "tosti & kids"),
-        UnitouchCategory(id: 10, name: "salades & soepen"),
-        UnitouchCategory(id: 11, name: "ontbijt"),
-        UnitouchCategory(id: 12, name: "alc. dranken"),
+        Components.Schemas.Category(id: selectedId, name: "hard lopers", sort_order: 0),
+        Components.Schemas.Category(id: UUID().uuidString, name: "warme dranken", sort_order: 1),
+        Components.Schemas.Category(id: UUID().uuidString, name: "gebak", sort_order: 2),
+        Components.Schemas.Category(id: UUID().uuidString, name: "fris dranken", sort_order: 3),
+        Components.Schemas.Category(id: UUID().uuidString, name: "bieren", sort_order: 4),
+        Components.Schemas.Category(id: UUID().uuidString, name: "wijnen", sort_order: 5),
+        Components.Schemas.Category(id: UUID().uuidString, name: "borrel happen", sort_order: 6),
+        Components.Schemas.Category(id: UUID().uuidString, name: "broodjes", sort_order: 7),
+        Components.Schemas.Category(id: UUID().uuidString, name: "tosti & kids", sort_order: 8),
+        Components.Schemas.Category(id: UUID().uuidString, name: "salades & soepen", sort_order: 9),
+        Components.Schemas.Category(id: UUID().uuidString, name: "ontbijt", sort_order: 10),
+        Components.Schemas.Category(id: UUID().uuidString, name: "alc. dranken", sort_order: 11),
     ], selectedId: $selectedId)
 }

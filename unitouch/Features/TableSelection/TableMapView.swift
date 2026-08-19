@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+/*
 struct TableMapView: View {
     @ObservedObject var session: SessionManager
     var nextState: SubTableActions
@@ -80,4 +81,5 @@ struct TableMapView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
+ */
 

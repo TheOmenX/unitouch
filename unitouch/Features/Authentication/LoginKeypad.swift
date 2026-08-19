@@ -15,7 +15,6 @@ struct LoginKeypad: View {
     
     var body: some View {
         ZStack {
-            //Color.background[800]
             VStack {
                 Text("Login Required")
                     .font(.title)

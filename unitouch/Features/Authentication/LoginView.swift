@@ -8,13 +8,12 @@
 import SwiftUI
 
 struct LoginView: View {
+    @EnvironmentObject var router: AppRouter
     
-    let users: [UnitouchUser]
-    let onSelect: (UnitouchUser) -> Void
-    let onFail: () -> Void
+    let users: [Components.Schemas.User]
     
-    @State private var recentUser: UnitouchUser? = nil
-    @State private var selectedUser: UnitouchUser? = nil
+    @State private var recentUser: Components.Schemas.User? = nil
+    @State private var selectedUser: Components.Schemas.User? = nil
     @State private var showAlert: Bool = false
     @State private var passwordText: String = ""
     
@@ -137,20 +136,22 @@ struct LoginView: View {
         
         .popup(isPresented: $showAlert) {
             LoginKeypad(
-                passcodeLength: selectedUser?.password.count ?? 3,
+                passcodeLength: selectedUser?.passcode?.count
+                ?? 3,
                 onComplete: ({ passcode in
-                    if passcode == selectedUser?.password {
-                        onSelect(selectedUser!)
+                    if passcode == selectedUser?.passcode {
+                        router.currentUser = selectedUser
+                        router.navigate(to: .main)
                     } else {
-                        onFail()
+                        router.activeError = .userLoginFailed(details: "Ongeldig wachtwoord")
                     }
                 }), onCancel: {
                     showAlert = false
                 }
             )
         }
-        .onAppear {
-            self.recentUser = DataManager.shared.load(forKey: "recentUser", as: UnitouchUser.self)
-        }
+//        .onAppear {
+//            self.recentUser = DataManager.shared.load(forKey: "recentUser", as: UnitouchUser.self)
+//        }
     }
 }
